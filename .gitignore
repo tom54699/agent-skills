@@ -1,0 +1,16 @@
+.DS_Store
+Thumbs.db
+AGENTS.md
+.codex/
+
+.idea/
+.vscode/
+
+*.log
+*.tmp
+*.swp
+*.swo
+
+.env
+.env.*
+!.env.example
