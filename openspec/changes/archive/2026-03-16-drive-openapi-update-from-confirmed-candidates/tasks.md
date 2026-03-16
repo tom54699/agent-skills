@@ -18,5 +18,5 @@
 ## 4. 驗證
 
 - [x] 4.1 驗證使用者可在候選清單中取消與新增 API，且 final list 會正確落檔。
-- [ ] 4.2 驗證 OpenAPI 更新只影響 confirmed JSON 中的 endpoint。
-- [ ] 4.3 驗證 Apidog 上傳與 HTML 仍在 final list 套用後才執行。
+- [x] 4.2 驗證 OpenAPI 更新只影響 confirmed JSON 中的 endpoint。
+- [x] 4.3 驗證 Apidog 上傳與 HTML 仍在 final list 套用後才執行。

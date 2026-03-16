@@ -1,6 +1,6 @@
 ## 1. Markdown Rendering
 
-- [ ] 1.1 擴充 `skills/laravel-api-docs/bin/render-markdown.php`，支援 Markdown 表格。
+- [x] 1.1 擴充 `skills/laravel-api-docs/bin/render-markdown.php`，支援 Markdown 表格。
 
 ## 2. HTML Layout
 

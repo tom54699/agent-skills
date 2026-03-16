@@ -317,6 +317,13 @@ final class OpenApiGenerator
                 }
             }
 
+            if ($requestFields === []) {
+                $inlineValidationRules = $controllerData['inline_validation_rules'] ?? [];
+                if (is_array($inlineValidationRules)) {
+                    $requestFields = array_values(array_filter($inlineValidationRules, static fn (mixed $field): bool => is_array($field)));
+                }
+            }
+
             $this->collectValidationReviewItems($route, $requestFields);
             $schema = $this->buildRequestSchema($requestFields);
 

@@ -27,6 +27,7 @@ final class ControllerParser
             'resource' => $this->findResource($methodSource),
             'error_messages' => $this->extractErrorMessages($methodSource),
             'inline_validation_detected' => preg_match('/->validate\(|Validator::make\(/', $methodSource) === 1,
+            'inline_validation_rules' => $this->extractInlineValidationRules($methodSource),
             'base_exception_getter_usage' => preg_match('/getErrorCode\(|getStatusCode\(|getData\(/', $methodSource) === 1,
             'throwable_fallback_detected' => (
                 preg_match('/catch\s*\([^)]*Throwable[^)]*\)/', $methodSource) === 1
@@ -106,6 +107,102 @@ final class ControllerParser
         }
 
         return '';
+    }
+
+    /**
+     * @return list<array<string,mixed>>
+     */
+    private function extractInlineValidationRules(string $methodSource): array
+    {
+        $parser = new FormRequestParser();
+        $merged = [];
+
+        foreach ($this->extractInlineValidationRuleLiterals($methodSource) as $literal) {
+            foreach ($parser->parseRulesArrayLiteral($literal) as $field) {
+                if (!is_array($field)) {
+                    continue;
+                }
+
+                $name = (string) ($field['field'] ?? '');
+                if ($name === '') {
+                    continue;
+                }
+
+                $merged[$name] = $field;
+            }
+        }
+
+        return array_values($merged);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function extractInlineValidationRuleLiterals(string $methodSource): array
+    {
+        $literals = [];
+        $offset = 0;
+
+        while (($start = strpos($methodSource, '->validate(', $offset)) !== false) {
+            $parenStart = strpos($methodSource, '(', $start);
+            if ($parenStart === false) {
+                break;
+            }
+            $parenEnd = $this->scanBalanced($methodSource, $parenStart, '(', ')');
+            if ($parenEnd === null) {
+                break;
+            }
+
+            $args = $this->splitTopLevelArguments(substr($methodSource, $parenStart + 1, $parenEnd - $parenStart - 1));
+            $literal = $this->extractArrayLiteralFromArgument($args[0] ?? null);
+            if ($literal !== null) {
+                $literals[] = $literal;
+            }
+
+            $offset = $parenEnd + 1;
+        }
+
+        $offset = 0;
+        while (($start = strpos($methodSource, 'Validator::make(', $offset)) !== false) {
+            $parenStart = strpos($methodSource, '(', $start);
+            if ($parenStart === false) {
+                break;
+            }
+            $parenEnd = $this->scanBalanced($methodSource, $parenStart, '(', ')');
+            if ($parenEnd === null) {
+                break;
+            }
+
+            $args = $this->splitTopLevelArguments(substr($methodSource, $parenStart + 1, $parenEnd - $parenStart - 1));
+            $literal = $this->extractArrayLiteralFromArgument($args[1] ?? null);
+            if ($literal !== null) {
+                $literals[] = $literal;
+            }
+
+            $offset = $parenEnd + 1;
+        }
+
+        return $literals;
+    }
+
+    private function extractArrayLiteralFromArgument(?string $argument): ?string
+    {
+        if ($argument === null) {
+            return null;
+        }
+
+        $argument = trim($argument);
+        $arrayStart = strpos($argument, '[');
+        if ($arrayStart === false) {
+            return null;
+        }
+
+        $arrayEnd = $this->scanBalanced($argument, $arrayStart, '[', ']');
+        if ($arrayEnd === null) {
+            return null;
+        }
+
+        return substr($argument, $arrayStart, $arrayEnd - $arrayStart + 1);
     }
 
     /**

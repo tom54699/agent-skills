@@ -13,6 +13,7 @@
 
 **Goals:**
 - 補強 `updated` endpoint 的 request schema，讓常見 Laravel validation rule 可轉成更完整的 OpenAPI schema。
+- 補強 controller inline validation，讓 `Request $request` + `$request->validate([...])` / `Validator::make(...)` 也能生成 requestBody schema。
 - 補強成功與錯誤 responses，讓 OpenAPI 能表達更多業務錯誤與錯誤碼來源。
 - 為 requestBody 與 responses 產生基本 examples，優先服務 `updated` endpoint。
 - 保持目前 PHP generator 架構，不再退回 shell parser。
@@ -44,6 +45,23 @@
 替代方案：
 - 改用完整 AST 套件解析 FormRequest
   - 放棄，因為成本高，超出目前需求
+
+### 1.1 共用 rule parser，同時支援 FormRequest 與 inline validation
+
+`myan-ride` 的多數空 requestBody endpoint 並不是因為沒有驗證規則，而是規則寫在 controller action 內，例如：
+
+- `$request->validate([...])`
+- `Validator::make($payload, [...])`
+
+因此不應再把 request 規則解析能力綁死在 `FormRequestParser::parseRules(file)`。這一筆 change 會把「rules block -> field schema」這層邏輯抽成可重用能力，讓：
+
+- FormRequest 仍可走既有 `rules()` 路徑
+- ControllerParser 可額外抽出 inline rules block
+- OpenApiGenerator 對兩種來源一視同仁地生成 schema / example
+
+理由：
+- 問題核心是來源不同，不是 rule-to-schema 映射本身不足
+- 共用 parser 比再做一套 inline parser 更容易維持一致行為
 
 ### 2. request example 由 schema 生成預設值，而非要求人工維護
 
@@ -94,13 +112,14 @@
 
 ## Migration Plan
 
-1. 先擴充 `FormRequestParser` 的 rule-to-schema 映射。
-2. 再擴充 `OpenApiGenerator` 的 requestBody example 與 response example 生成。
-3. 以代表性的 `updated` endpoints 驗證：
+1. 先將 `FormRequestParser` 的 rule-to-schema 邏輯整理成可供 inline validation 重用。
+2. 擴充 `ControllerParser`，讓它能抽取 controller action 內的 inline validation rules。
+3. 再擴充 `OpenApiGenerator`，優先使用 FormRequest，否則回退到 inline validation 規則生成 requestBody。
+4. 以代表性的 `updated` endpoints 驗證：
    - request 規則是否可見
    - response example 是否可見
    - 錯誤資訊是否更完整
-4. 最後更新 `SKILL.md` 與 OpenSpec tasks。
+5. 最後更新 `SKILL.md` 與 OpenSpec tasks。
 
 ## Open Questions
 

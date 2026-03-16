@@ -166,7 +166,7 @@ description: 以 guided-sync 流程自動同步 Laravel API 文件。流程為�
 2. 分析每個 endpoint 對應檔案：
 - **Controller**：提取 PHPDoc、`@throws`、錯誤訊息、方法說明
 - **Service**：分析業務邏輯中的 Exception 與錯誤碼
-- **FormRequest**：解析 `rules()` 並轉為 requestBody/schema
+- **FormRequest / inline validation**：解析 `rules()`、`$request->validate([...])`、`Validator::make(..., [...])` 並轉為 requestBody/schema
 - **Exception**：解析自訂 Exception 的預設錯誤訊息與 HTTP 狀態碼
 - **Resource（可選）**：解析回應欄位結構
 3. 依分析結果更新 `docs/api-docs/openapi.yaml`：
@@ -195,7 +195,7 @@ description: 以 guided-sync 流程自動同步 Laravel API 文件。流程為�
 - `bash "$SKILL_DIR/confirm-openapi-review.sh" --input docs/api-docs/reviews/openapi-review.<timestamp>.json --accept-all --output docs/api-docs/reviews/<timestamp>.approved.json`
 13. 目前 review decision 的最小契約是：每個 unresolved item 都必須被明確 accept，未被 accept 前不得 upload。
 14. `updated` endpoint 的 enrich 目標：
-- requestBody schema 應優先反映常見 FormRequest rule，至少包含 `nullable`、`string`、`integer`、`numeric`、`boolean`、`array`、`min`、`max`、`between`、`size`、`digits`、`email`、`date`、`in`
+- requestBody schema 應優先反映常見 Laravel request validation rule，不限於 FormRequest，也包含 controller action 內的 inline validation；至少包含 `nullable`、`string`、`integer`、`numeric`、`boolean`、`array`、`min`、`max`、`between`、`size`、`digits`、`email`、`date`、`in`
 - 應支援 Laravel 常見 array-style rules，且不得因 rule 寫法不同而漏掉欄位
 - 應將 dotted fields 與 wildcard fields（例如 `profile.name`、`items.*.id`）轉成真正的 nested object / array schema，不得平鋪成原始欄位名
 - `Password::min(...)->letters()->numbers()->mixedCase()->symbols()` 應拆成 capability 處理，而不是當成單一 rule 字串

@@ -23,6 +23,14 @@ final class FormRequestParser
             return [];
         }
 
+        return $this->parseRulesArrayLiteral($rulesBlock);
+    }
+
+    /**
+     * @return list<array<string,mixed>>
+     */
+    public function parseRulesArrayLiteral(string $rulesBlock): array
+    {
         $fields = [];
         foreach ($this->extractRuleEntries($rulesBlock) as $field => $rules) {
             $fields[] = $this->parseRuleTokens($field, $rules);
