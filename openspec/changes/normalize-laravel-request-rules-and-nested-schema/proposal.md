@@ -22,6 +22,6 @@
 
 ## Impact
 
-- 影響 `skills/laravel-api-docs/src/InferCandidates/FormRequestParser.php`
-- 影響 `skills/laravel-api-docs/src/OpenApiGenerator/OpenApiGenerator.php`
-- 影響 `skills/laravel-api-docs/SKILL.md`
+- 影響 `skills/.curated/laravel-api-docs/src/InferCandidates/FormRequestParser.php`
+- 影響 `skills/.curated/laravel-api-docs/src/OpenApiGenerator/OpenApiGenerator.php`
+- 影響 `skills/.curated/laravel-api-docs/SKILL.md`

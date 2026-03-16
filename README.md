@@ -1,15 +1,31 @@
 # Agent Skills
 
-這個 repo 主要拿來放我自己用的 agent skills 和相關 OpenSpec 紀錄；如果剛好有人也要用，可以直接從 `skills/` 找對應 skill。
+這個 repo 用來集中管理多個 agent skill 與其 OpenSpec 變更紀錄，結構上區分穩定可安裝與實驗中 skill，方便後續持續擴充。
 
-## 目錄
+## Repo 結構
 
-- `skills/`：技能本體與腳本
+- `skills/.curated/`：穩定、可推薦安裝的 skill
+- `skills/.experimental/`：仍在驗證、可能調整契約的 skill
 - `openspec/`：需求、設計、spec、tasks 紀錄
+- `docs/`：repo 級文件與安裝說明
 
-## 目前主要技能
+## 安裝
 
-### `skills/laravel-api-docs`
+公開到 GitHub 後，建議用 repo-based 方式安裝：
+
+```bash
+npx skills add <owner>/<repo> --skill laravel-api-docs
+```
+
+若要裝給特定 agent 或做全域安裝，再依實際 CLI 需求補上 `--agent`、`--global` 等參數。
+
+完整安裝說明見 [docs/install-skills.md](/Users/athena/Documents/workSpace/私人/Agent-Skills/docs/install-skills.md)。
+
+## Curated Skills
+
+### `laravel-api-docs`
+
+位置：`skills/.curated/laravel-api-docs`
 
 用來跑 Laravel API 文件 guided-sync。流程大致會：
 
@@ -20,20 +36,6 @@
 - 同步到 Apidog，必要時處理 review 與衝突
 - 最後產生多頁 HTML 文件
 
-HTML 輸出固定為：
+## Experimental Skills
 
-- `index.html`：摘要首頁
-- `api-docs.html`：純 API 文件頁
-
-使用方式：
-
-- 進到 Laravel 專案目錄
-- 在 agent 對話裡直接說：
-  - `幫我更新 API 文件`
-  - `sync api docs`
-  - `幫我產生 API 文件`
-
-## 備註
-
-- 這個 repo 偏自用，不特別做通用化包裝。
-- 本地協作檔不進版控，正式變更以 `skills/` 和 `openspec/` 為主。
+目前保留 `skills/.experimental/` 結構，之後新增仍在探索中的 skill 時使用。

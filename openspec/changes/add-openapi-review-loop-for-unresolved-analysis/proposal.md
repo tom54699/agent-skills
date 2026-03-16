@@ -22,6 +22,6 @@
 
 ## Impact
 
-- 影響 `skills/laravel-api-docs/SKILL.md`
+- 影響 `skills/.curated/laravel-api-docs/SKILL.md`
 - 可能新增 review artifact 產生器與 apply 邏輯
 - 影響 guided-sync 流程文件

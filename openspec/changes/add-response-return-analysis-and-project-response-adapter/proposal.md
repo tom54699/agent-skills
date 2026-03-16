@@ -22,7 +22,7 @@
 
 ## Impact
 
-- 影響 `skills/laravel-api-docs/src/InferCandidates/ControllerParser.php`
-- 影響 `skills/laravel-api-docs/src/OpenApiGenerator/OpenApiGenerator.php`
+- 影響 `skills/.curated/laravel-api-docs/src/InferCandidates/ControllerParser.php`
+- 影響 `skills/.curated/laravel-api-docs/src/OpenApiGenerator/OpenApiGenerator.php`
 - 可能新增 response adapter 類別
-- 影響 `skills/laravel-api-docs/SKILL.md`
+- 影響 `skills/.curated/laravel-api-docs/SKILL.md`

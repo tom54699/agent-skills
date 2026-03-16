@@ -20,7 +20,7 @@
 
 ## Impact
 
-- 影響 `skills/laravel-api-docs/src/InferCandidates/FormRequestParser.php`
-- 影響 `skills/laravel-api-docs/src/InferCandidates/ControllerParser.php`
-- 影響 `skills/laravel-api-docs/src/OpenApiGenerator/OpenApiGenerator.php`
-- 影響 `skills/laravel-api-docs/src/OpenApiGenerator/RouteDefinition.php`
+- 影響 `skills/.curated/laravel-api-docs/src/InferCandidates/FormRequestParser.php`
+- 影響 `skills/.curated/laravel-api-docs/src/InferCandidates/ControllerParser.php`
+- 影響 `skills/.curated/laravel-api-docs/src/OpenApiGenerator/OpenApiGenerator.php`
+- 影響 `skills/.curated/laravel-api-docs/src/OpenApiGenerator/RouteDefinition.php`

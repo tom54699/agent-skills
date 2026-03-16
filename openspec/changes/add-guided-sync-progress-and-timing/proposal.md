@@ -20,14 +20,14 @@
 ## Impact
 
 - 影響檔案：
-  - `skills/laravel-api-docs/SKILL.md`
-  - `skills/laravel-api-docs/scripts/preflight.sh`
-  - `skills/laravel-api-docs/scripts/infer-candidates.sh`
-  - `skills/laravel-api-docs/scripts/confirm-candidates.sh`
-  - `skills/laravel-api-docs/scripts/gen-openapi.sh`
-  - `skills/laravel-api-docs/scripts/upload-apidog.sh`
-  - `skills/laravel-api-docs/scripts/gen-html.sh`
-  - `skills/laravel-api-docs/scripts/progress-lib.sh`（新增）
+  - `skills/.curated/laravel-api-docs/SKILL.md`
+  - `skills/.curated/laravel-api-docs/scripts/preflight.sh`
+  - `skills/.curated/laravel-api-docs/scripts/infer-candidates.sh`
+  - `skills/.curated/laravel-api-docs/scripts/confirm-candidates.sh`
+  - `skills/.curated/laravel-api-docs/scripts/gen-openapi.sh`
+  - `skills/.curated/laravel-api-docs/scripts/upload-apidog.sh`
+  - `skills/.curated/laravel-api-docs/scripts/gen-html.sh`
+  - `skills/.curated/laravel-api-docs/scripts/progress-lib.sh`（新增）
 - 影響行為：
   - guided-sync 執行時會多出 `stderr` 進度與 timing 輸出
   - 長時間腳本完成後可直接看出瓶頸階段

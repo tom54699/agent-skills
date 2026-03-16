@@ -19,6 +19,6 @@
 
 ## Impact
 
-- 影響 `skills/laravel-api-docs/scripts/upload-apidog.sh`
+- 影響 `skills/.curated/laravel-api-docs/scripts/upload-apidog.sh`
 - 影響 Step 7 conflict file 內容與 `keep_remote` 的實際上傳結果
-- 影響 `skills/laravel-api-docs/SKILL.md` 對 updated conflict 行為的描述
+- 影響 `skills/.curated/laravel-api-docs/SKILL.md` 對 updated conflict 行為的描述

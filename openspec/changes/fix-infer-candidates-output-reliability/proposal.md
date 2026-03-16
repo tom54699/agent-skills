@@ -19,7 +19,7 @@
 ## Impact
 
 - 影響檔案：
-  - `skills/laravel-api-docs/scripts/infer-candidates.sh`
+  - `skills/.curated/laravel-api-docs/scripts/infer-candidates.sh`
 - 影響流程：
   - 候選推測在遇到未解析 symbol 時不中止。
   - `--output` 在推測完成後可穩定寫入結果檔。

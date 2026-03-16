@@ -21,6 +21,6 @@
 
 ## Impact
 
-- 影響檔案：`skills/laravel-api-docs/SKILL.md`
-- 可能影響腳本：`skills/laravel-api-docs/scripts/*.sh`（後續依契約補強）
+- 影響檔案：`skills/.curated/laravel-api-docs/SKILL.md`
+- 可能影響腳本：`skills/.curated/laravel-api-docs/scripts/*.sh`（後續依契約補強）
 - 新增資料檔案契約：`docs/api-docs/history/apidog-sync-history.jsonl`

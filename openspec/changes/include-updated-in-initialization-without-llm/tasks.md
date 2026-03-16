@@ -1,6 +1,6 @@
 ## 1. 初始化流程與文件規格更新
 
-- [x] 1.1 更新 `skills/laravel-api-docs/SKILL.md`：初始化模式由 `new-only` 改為 `new+updated`。
+- [x] 1.1 更新 `skills/.curated/laravel-api-docs/SKILL.md`：初始化模式由 `new-only` 改為 `new+updated`。
 - [x] 1.2 在 `SKILL.md` 補充初始化預設不推測 `deleted` 的規則與理由。
 - [x] 1.3 在 `SKILL.md` 補充反向關聯來源（FormRequest/Service/Exception/Resource -> Controller@action -> endpoint）。
 

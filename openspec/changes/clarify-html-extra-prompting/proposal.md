@@ -15,4 +15,4 @@
 
 ## Impact
 
-- 影響 `skills/laravel-api-docs/SKILL.md`
+- 影響 `skills/.curated/laravel-api-docs/SKILL.md`

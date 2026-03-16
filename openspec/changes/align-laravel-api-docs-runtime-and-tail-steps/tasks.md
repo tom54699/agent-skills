@@ -1,19 +1,19 @@
 ## 1. Preflight Runtime Readiness
 
-- [x] 1.1 擴充 `skills/laravel-api-docs/scripts/preflight.sh`，檢查 `php` binary、`php -n` 可執行、以及 `php -n artisan route:list --json` 可成功產出有效 JSON。
-- [x] 1.2 更新 `skills/laravel-api-docs/SKILL.md`，將 PHP runtime readiness 明確列入 Step 1 必要條件與錯誤訊息。
+- [x] 1.1 擴充 `skills/.curated/laravel-api-docs/scripts/preflight.sh`，檢查 `php` binary、`php -n` 可執行、以及 `php -n artisan route:list --json` 可成功產出有效 JSON。
+- [x] 1.2 更新 `skills/.curated/laravel-api-docs/SKILL.md`，將 PHP runtime readiness 明確列入 Step 1 必要條件與錯誤訊息。
 - [x] 1.3 驗證 preflight 在缺少 PHP、`php -n` 失敗、route:list 失敗時都會中止並輸出明確錯誤。
 
 ## 2. Apidog Conflict Alignment
 
-- [x] 2.1 擴充 `skills/laravel-api-docs/scripts/upload-apidog.sh`，在上傳前針對 confirmed `updated` endpoint 執行本地/遠端 operation 比對。
+- [x] 2.1 擴充 `skills/.curated/laravel-api-docs/scripts/upload-apidog.sh`，在上傳前針對 confirmed `updated` endpoint 執行本地/遠端 operation 比對。
 - [x] 2.2 產出 `docs/api-docs/conflicts/<timestamp>.json`，並落地 `method`、`path`、`conflict_type`、`reason`、`suggested_action`。
 - [x] 2.3 實作 `keep_remote`、`use_local`、`manual_merge` 三種策略，並讓未明確確認的衝突預設走 `keep_remote`。
 - [x] 2.4 讓 history 的 `conflict_count` 來自實際 conflict result，而不是外部傳入的 placeholder 值。
 
 ## 3. Redoc Extra Content
 
-- [x] 3.1 擴充 `skills/laravel-api-docs/scripts/gen-html.sh`，支援可選載入 `docs/api-docs/redoc/extra.md`。
+- [x] 3.1 擴充 `skills/.curated/laravel-api-docs/scripts/gen-html.sh`，支援可選載入 `docs/api-docs/redoc/extra.md`。
 - [x] 3.2 將 `extra.md` 內容渲染到 HTML 固定區塊，且不得修改 `docs/api-docs/openapi.yaml`。
 - [x] 3.3 驗證未啟用 extra、啟用且存在、啟用但缺檔三種情境。
 

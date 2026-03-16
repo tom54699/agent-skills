@@ -26,6 +26,6 @@
   - 在 `/Users/athena/Herd/myan-ride` 的兩條 representative candidate 下，PHP generator 完整 `openapi_total` 約 `1937ms`。
   - 重建的 legacy shell 路徑即使做最小 escape 修補，僅 `route_snapshot + candidate_normalization` 就已約 `1997ms`，且在進入 endpoint generation 前即因額外 shell/jq fragility 失敗。
   - 可確認 PHP generator 不僅減少 parser subprocess，且整體完成時間已低於舊 shell 路徑尚未完成前的耗時。
-- [x] 4.3 更新 `skills/laravel-api-docs/SKILL.md`，說明 OpenAPI 生成改由 PHP generator 提供。
+- [x] 4.3 更新 `skills/.curated/laravel-api-docs/SKILL.md`，說明 OpenAPI 生成改由 PHP generator 提供。
 - [x] 4.4 降級或移除 `parse-controller.sh`、`parse-service.sh`、`parse-form-request.sh` 在主路徑的角色。
   - `gen-openapi.sh` 主路徑已不再呼叫三支 shell parser；後續收尾 change 已將過渡 shell parser 自 runtime 移除。

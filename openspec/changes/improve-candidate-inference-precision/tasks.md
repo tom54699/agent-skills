@@ -14,7 +14,7 @@
 
 - [x] 3.1 在候選輸出 `signals` 增加 method/action 級命中欄位（如 `service_method_hit`、`dependency_action_hit`）。
 - [x] 3.2 更新 `change_reason` 組裝規則，讓使用者可讀出具體命中來源。
-- [x] 3.3 更新 `skills/laravel-api-docs/SKILL.md` 的 Step 2 說明與 debug 欄位定義。
+- [x] 3.3 更新 `skills/.curated/laravel-api-docs/SKILL.md` 的 Step 2 說明與 debug 欄位定義。
 
 ## 4. Verification and Regression
 

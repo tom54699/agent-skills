@@ -1,6 +1,6 @@
 ## 1. Preflight 腳本
 
-- [x] 1.1 新增 `skills/laravel-api-docs/scripts/preflight.sh`。
+- [x] 1.1 新增 `skills/.curated/laravel-api-docs/scripts/preflight.sh`。
 - [x] 1.2 檢查 Laravel 專案根目錄必要條件：`artisan`、`routes/`。
 - [x] 1.3 檢查 `.env.agents` 是否存在且包含 `APIDOG_ACCESS_TOKEN`、`APIDOG_PROJECT_ID`。
 - [x] 1.4 檢查 `.gitignore` 是否包含 `.env.agents`。
@@ -9,7 +9,7 @@
 
 ## 2. 文件同步
 
-- [x] 2.1 更新 `skills/laravel-api-docs/SKILL.md`，要求 guided-sync 先成功執行 `preflight.sh`。
+- [x] 2.1 更新 `skills/.curated/laravel-api-docs/SKILL.md`，要求 guided-sync 先成功執行 `preflight.sh`。
 - [x] 2.2 補充 preflight 成功 / 失敗時的後續處理規則。
 
 ## 3. 驗證

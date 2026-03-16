@@ -21,8 +21,8 @@
 ## Impact
 
 - 影響檔案：
-  - `skills/laravel-api-docs/SKILL.md`
-  - 新增 `skills/laravel-api-docs/scripts/preflight.sh`
+  - `skills/.curated/laravel-api-docs/SKILL.md`
+  - 新增 `skills/.curated/laravel-api-docs/scripts/preflight.sh`
 - 影響流程：
   - guided-sync 先跑 preflight，再進入 `infer-candidates.sh`
   - 缺少關鍵條件時，流程明確中止而非依代理自由判斷

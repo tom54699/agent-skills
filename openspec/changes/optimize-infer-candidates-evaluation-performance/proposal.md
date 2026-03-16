@@ -22,9 +22,9 @@
 ## Impact
 
 - 影響檔案：
-  - `skills/laravel-api-docs/scripts/infer-candidates.sh`
-  - `skills/laravel-api-docs/scripts/parse-controller.sh`
-  - `skills/laravel-api-docs/SKILL.md`
+  - `skills/.curated/laravel-api-docs/scripts/infer-candidates.sh`
+  - `skills/.curated/laravel-api-docs/scripts/parse-controller.sh`
+  - `skills/.curated/laravel-api-docs/SKILL.md`
 - 影響行為：
   - 候選與 debug 結果應維持一致
   - `candidate_evaluation` 的 route 工作集應顯著小於 route snapshot

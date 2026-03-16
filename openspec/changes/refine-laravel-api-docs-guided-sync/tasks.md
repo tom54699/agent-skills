@@ -1,6 +1,6 @@
 ## 1. Skill 文件重構
 
-- [x] 1.1 重寫 `skills/laravel-api-docs/SKILL.md` 為單一 `guided-sync` 流程。
+- [x] 1.1 重寫 `skills/.curated/laravel-api-docs/SKILL.md` 為單一 `guided-sync` 流程。
 - [x] 1.2 移除舊的三模式互動描述，改為「AI 先猜清單 -> 討論確認 -> 執行」。
 - [x] 1.3 明確定義同步順序：更新 OpenAPI -> 上傳 Apidog -> 產生 HTML。
 

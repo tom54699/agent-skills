@@ -23,6 +23,6 @@
   - 經定點檢查，這 4 條 route action、controller parser、service method diff 與 dependency link 條件皆成立，採納為 shell 既有遺漏，PHP analyzer 結果作為新基準。
 - [x] 4.2 比較 `infer_total` 與主要 breakdown，確認有明顯下降。
   - 同一專案與 commit 範圍下，shell 約 `145521ms`，PHP analyzer 約 `2925ms`。
-- [x] 4.3 更新 `skills/laravel-api-docs/SKILL.md`，說明候選推測改由 PHP analyzer 提供。
+- [x] 4.3 更新 `skills/.curated/laravel-api-docs/SKILL.md`，說明候選推測改由 PHP analyzer 提供。
 - [x] 4.4 清理或降級舊 shell-heavy 分析邏輯，避免雙邏輯並存。
   - 舊 shell-heavy inference 已自 `infer-candidates.sh` 移除；後續 `gen-openapi` 也完成 PHP 化後，過渡 shell parser 已一併退出主路徑。

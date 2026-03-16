@@ -18,6 +18,6 @@
 
 ## Impact
 
-- 影響 `skills/laravel-api-docs/scripts/upload-apidog.sh`
+- 影響 `skills/.curated/laravel-api-docs/scripts/upload-apidog.sh`
 - 影響 Step 7 成功條件與 history 寫入時機
-- 影響 `skills/laravel-api-docs/SKILL.md` 對 Apidog 同步成功定義的描述
+- 影響 `skills/.curated/laravel-api-docs/SKILL.md` 對 Apidog 同步成功定義的描述

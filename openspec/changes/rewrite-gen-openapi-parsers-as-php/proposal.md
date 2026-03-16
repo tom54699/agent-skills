@@ -20,12 +20,12 @@
 ## Impact
 
 - 影響檔案：
-  - `skills/laravel-api-docs/scripts/gen-openapi.sh`
-  - `skills/laravel-api-docs/scripts/parse-controller.sh`
-  - `skills/laravel-api-docs/scripts/parse-service.sh`
-  - `skills/laravel-api-docs/scripts/parse-form-request.sh`
-  - `skills/laravel-api-docs/SKILL.md`
-  - 新增 `skills/laravel-api-docs/bin/` 或 `skills/laravel-api-docs/src/` 下的 PHP OpenAPI generator
+  - `skills/.curated/laravel-api-docs/scripts/gen-openapi.sh`
+  - `skills/.curated/laravel-api-docs/scripts/parse-controller.sh`
+  - `skills/.curated/laravel-api-docs/scripts/parse-service.sh`
+  - `skills/.curated/laravel-api-docs/scripts/parse-form-request.sh`
+  - `skills/.curated/laravel-api-docs/SKILL.md`
+  - 新增 `skills/.curated/laravel-api-docs/bin/` 或 `skills/.curated/laravel-api-docs/src/` 下的 PHP OpenAPI generator
 - 影響行為：
   - `openapi.yaml` 結構與 `--candidate-file` / `--incremental` 契約應維持相容
   - `gen-openapi` 應顯著降低 subprocess 與重複 parser 呼叫

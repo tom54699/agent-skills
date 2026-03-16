@@ -21,9 +21,9 @@
 ## Impact
 
 - 影響檔案：
-  - `skills/laravel-api-docs/SKILL.md`
-  - `skills/laravel-api-docs/scripts/infer-candidates.sh`
-  - `skills/laravel-api-docs/scripts/upload-apidog.sh`（初始化成功後 baseline 一致化）
+  - `skills/.curated/laravel-api-docs/SKILL.md`
+  - `skills/.curated/laravel-api-docs/scripts/infer-candidates.sh`
+  - `skills/.curated/laravel-api-docs/scripts/upload-apidog.sh`（初始化成功後 baseline 一致化）
 - 影響流程：
   - 首次執行需先確認基準來源或指定 `from_commit`
   - 初始化不再輸出大量 `updated` 候選

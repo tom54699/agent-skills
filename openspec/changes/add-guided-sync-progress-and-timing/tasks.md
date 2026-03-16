@@ -1,8 +1,8 @@
 ## 1. 規格與共用層
 
 - [x] 1.1 新增 progress/timing 的 OpenSpec spec，定義 checklist、進度條與 timing 輸出契約。
-- [x] 1.2 新增 `skills/laravel-api-docs/scripts/progress-lib.sh`，集中管理步驟定義、進度條與 timing helper。
-- [x] 1.3 更新 `skills/laravel-api-docs/SKILL.md`，說明 guided-sync 的進度與慢點分析方式。
+- [x] 1.2 新增 `skills/.curated/laravel-api-docs/scripts/progress-lib.sh`，集中管理步驟定義、進度條與 timing helper。
+- [x] 1.3 更新 `skills/.curated/laravel-api-docs/SKILL.md`，說明 guided-sync 的進度與慢點分析方式。
 
 ## 2. 粗粒度腳本進度
 

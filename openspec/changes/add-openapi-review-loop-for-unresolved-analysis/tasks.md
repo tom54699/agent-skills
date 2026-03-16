@@ -15,7 +15,7 @@
 
 ## 4. Documentation
 
-- [x] 4.1 更新 `skills/laravel-api-docs/SKILL.md`，說明 review loop 何時觸發、如何繼續。
+- [x] 4.1 更新 `skills/.curated/laravel-api-docs/SKILL.md`，說明 review loop 何時觸發、如何繼續。
 
 ## 5. Verification
 

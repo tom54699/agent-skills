@@ -6,7 +6,7 @@
 
 - 重新命名並分組 `infer-candidates.sh` 的 debug 訊息。
 - 在無 OpenAPI baseline 時，將 route/doc 差集標示為資訊性輸出，而非候選訊號。
-- 同步更新 `skills/laravel-api-docs/SKILL.md` 的 debug 閱讀說明。
+- 同步更新 `skills/.curated/laravel-api-docs/SKILL.md` 的 debug 閱讀說明。
 
 ## Capabilities
 
@@ -19,7 +19,7 @@
 ## Impact
 
 - 影響檔案：
-  - `skills/laravel-api-docs/scripts/infer-candidates.sh`
-  - `skills/laravel-api-docs/SKILL.md`
+  - `skills/.curated/laravel-api-docs/scripts/infer-candidates.sh`
+  - `skills/.curated/laravel-api-docs/SKILL.md`
 - 影響流程：
   - 僅改善 debug 可讀性，不改變候選推測結果。

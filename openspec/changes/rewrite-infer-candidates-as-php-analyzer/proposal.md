@@ -26,10 +26,10 @@
 ## Impact
 
 - 影響檔案：
-  - `skills/laravel-api-docs/scripts/infer-candidates.sh`
-  - `skills/laravel-api-docs/scripts/parse-controller.sh`
-  - `skills/laravel-api-docs/SKILL.md`
-  - 新增 `skills/laravel-api-docs/bin/` 或 `skills/laravel-api-docs/src/` 下的 PHP 分析器
+  - `skills/.curated/laravel-api-docs/scripts/infer-candidates.sh`
+  - `skills/.curated/laravel-api-docs/scripts/parse-controller.sh`
+  - `skills/.curated/laravel-api-docs/SKILL.md`
+  - 新增 `skills/.curated/laravel-api-docs/bin/` 或 `skills/.curated/laravel-api-docs/src/` 下的 PHP 分析器
 - 影響行為：
   - 候選結果與現有 `status/method/path` 應維持等價
   - `infer_total` 目標應明顯低於目前 shell 版

@@ -20,11 +20,11 @@
 ## Impact
 
 - 影響檔案：
-  - `skills/laravel-api-docs/SKILL.md`
-  - `skills/laravel-api-docs/scripts/infer-candidates.sh`
-  - `skills/laravel-api-docs/scripts/parse-controller.sh`
-  - `skills/laravel-api-docs/scripts/parse-form-request.sh`
-  - `skills/laravel-api-docs/scripts/parse-service.sh`
+  - `skills/.curated/laravel-api-docs/SKILL.md`
+  - `skills/.curated/laravel-api-docs/scripts/infer-candidates.sh`
+  - `skills/.curated/laravel-api-docs/scripts/parse-controller.sh`
+  - `skills/.curated/laravel-api-docs/scripts/parse-form-request.sh`
+  - `skills/.curated/laravel-api-docs/scripts/parse-service.sh`
 - 影響流程：
   - 初始化（無 success history）改為 `new + updated` 推測。
   - 使用者在確認清單時可看到參數/回應變更來源與缺漏欄位，降低誤同步風險。

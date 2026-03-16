@@ -21,10 +21,10 @@
 ## Impact
 
 - 影響檔案：
-  - `skills/laravel-api-docs/scripts/infer-candidates.sh`
-  - `skills/laravel-api-docs/scripts/parse-controller.sh`
-  - `skills/laravel-api-docs/scripts/parse-service.sh`
-  - `skills/laravel-api-docs/SKILL.md`
+  - `skills/.curated/laravel-api-docs/scripts/infer-candidates.sh`
+  - `skills/.curated/laravel-api-docs/scripts/parse-controller.sh`
+  - `skills/.curated/laravel-api-docs/scripts/parse-service.sh`
+  - `skills/.curated/laravel-api-docs/SKILL.md`
 - 影響流程：
   - Step 2 候選推測將優先採 method/action 命中，降低噪音。
   - 使用者在候選確認階段會看到更精準的 `updated` 清單與理由。

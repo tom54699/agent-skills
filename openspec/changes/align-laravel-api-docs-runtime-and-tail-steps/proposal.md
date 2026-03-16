@@ -21,11 +21,11 @@
 ## Impact
 
 - Affected scripts:
-  - `skills/laravel-api-docs/scripts/preflight.sh`
-  - `skills/laravel-api-docs/scripts/upload-apidog.sh`
-  - `skills/laravel-api-docs/scripts/gen-html.sh`
+  - `skills/.curated/laravel-api-docs/scripts/preflight.sh`
+  - `skills/.curated/laravel-api-docs/scripts/upload-apidog.sh`
+  - `skills/.curated/laravel-api-docs/scripts/gen-html.sh`
 - Affected docs:
-  - `skills/laravel-api-docs/SKILL.md`
+  - `skills/.curated/laravel-api-docs/SKILL.md`
 - Affected workflow artifacts:
   - `docs/api-docs/conflicts/<timestamp>.json`
   - `docs/api-docs/redoc/extra.md`
