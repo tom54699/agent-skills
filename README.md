@@ -11,15 +11,21 @@
 
 ## 安裝
 
-公開到 GitHub 後，建議用 repo-based 方式安裝：
+公開 repo 後，建議直接用 repo-based 方式安裝：
 
 ```bash
-npx skills add <owner>/<repo> --skill laravel-api-docs
+npx skills add tom54699/agent-skills --skill laravel-api-docs
 ```
 
-若要裝給特定 agent 或做全域安裝，再依實際 CLI 需求補上 `--agent`、`--global` 等參數。
+常見變體：
 
-完整安裝說明見 [docs/install-skills.md](/Users/athena/Documents/workSpace/私人/Agent-Skills/docs/install-skills.md)。
+```bash
+npx skills add tom54699/agent-skills --list
+npx skills add tom54699/agent-skills --skill laravel-api-docs --agent codex
+npx skills add tom54699/agent-skills --skill laravel-api-docs --global
+```
+
+完整安裝說明見 [docs/install-skills.md](docs/install-skills.md)，公開發佈整理見 [docs/publish-skills.md](docs/publish-skills.md)。
 
 ## Curated Skills
 
@@ -39,3 +45,5 @@ npx skills add <owner>/<repo> --skill laravel-api-docs
 ## Experimental Skills
 
 目前保留 `skills/.experimental/` 結構，之後新增仍在探索中的 skill 時使用。
+
+若某個 experimental skill 不想被一般安裝流程列出，請在該 skill 的 `SKILL.md` frontmatter 補上 `metadata.internal: true`。
