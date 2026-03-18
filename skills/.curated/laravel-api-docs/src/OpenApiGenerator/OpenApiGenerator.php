@@ -7,6 +7,7 @@ use LaravelApiDocs\InferCandidates\EventEmitter;
 use LaravelApiDocs\InferCandidates\FormRequestParser;
 use LaravelApiDocs\InferCandidates\ServiceParser;
 use LaravelApiDocs\InferCandidates\Shell;
+use LaravelApiDocs\PathStrategy;
 
 final class OpenApiGenerator
 {
@@ -18,6 +19,8 @@ final class OpenApiGenerator
     private array $timings = [];
     /** @var array<string,string> */
     private array $timingDetails = [];
+    private ?string $resolvedPathStrategy = null;
+    private ?string $resolvedPathStrategySource = null;
     /** @var array{
      *   unresolved_validation_rules:list<array<string,mixed>>,
      *   unresolved_response_shape:list<array<string,mixed>>,
@@ -68,6 +71,8 @@ final class OpenApiGenerator
             'mode' => $this->mode(),
             'candidate_file' => $this->options->candidateFile,
             'review_file' => $reviewFile,
+            'path_strategy' => $this->pathStrategy(),
+            'path_strategy_source' => $this->pathStrategySource(),
             'review_item_count' => $this->reviewItemCount(),
             'total_endpoint_count' => $routeIndex->count(),
             'generated_endpoint_count' => count($candidateState['routes']),
@@ -91,6 +96,54 @@ final class OpenApiGenerator
         return 'full';
     }
 
+    private function pathStrategy(): string
+    {
+        if ($this->resolvedPathStrategy !== null) {
+            return $this->resolvedPathStrategy;
+        }
+
+        if ($this->options->pathStrategy !== null) {
+            $this->resolvedPathStrategy = $this->options->pathStrategy;
+            $this->resolvedPathStrategySource = 'cli';
+            return $this->resolvedPathStrategy;
+        }
+
+        if ($this->options->candidateFile !== null && is_file($this->options->candidateFile)) {
+            $decoded = json_decode((string) file_get_contents($this->options->candidateFile), true);
+            $candidateMetaStrategy = is_array($decoded) ? ($decoded['meta']['path_strategy'] ?? null) : null;
+            if (is_string($candidateMetaStrategy) && PathStrategy::isValid($candidateMetaStrategy)) {
+                $this->resolvedPathStrategy = PathStrategy::normalize($candidateMetaStrategy);
+                $this->resolvedPathStrategySource = 'candidate_meta';
+                return $this->resolvedPathStrategy;
+            }
+        }
+
+        $baseFile = $this->resolveMergeSource();
+        if ($baseFile !== null && is_file($baseFile)) {
+            $base = $this->loadYamlDocument($baseFile);
+            $detected = PathStrategy::detectFromOpenApiDocument($base);
+            if ($detected !== null) {
+                $this->resolvedPathStrategy = $detected;
+                $this->resolvedPathStrategySource = 'openapi_baseline';
+                return $this->resolvedPathStrategy;
+            }
+        }
+
+        $this->resolvedPathStrategy = PathStrategy::STRIP_API_PREFIX_TO_SERVER;
+        $this->resolvedPathStrategySource = 'legacy_default';
+
+        return $this->resolvedPathStrategy;
+    }
+
+    private function pathStrategySource(): string
+    {
+        if ($this->resolvedPathStrategySource === null) {
+            $this->pathStrategy();
+        }
+
+        return $this->resolvedPathStrategySource ?? 'legacy_default';
+    }
+
     private function buildRouteIndex(): RouteIndex
     {
         $this->events->progress('route_snapshot', 0, 1, 'loading laravel routes');
@@ -104,18 +157,14 @@ final class OpenApiGenerator
             }
 
             $rawUri = (string) ($route['uri'] ?? '');
-            if (!str_starts_with($rawUri, 'api/') && !str_starts_with($rawUri, '/api/')) {
+            $path = PathStrategy::normalizeRoutePath($rawUri, $this->pathStrategy());
+            if ($path === null) {
                 continue;
             }
 
             $methodParts = explode('|', (string) ($route['method'] ?? 'GET'));
             $methodParts = array_values(array_filter(array_map('strtoupper', $methodParts), static fn (string $method): bool => !in_array($method, ['HEAD', 'OPTIONS'], true)));
             $method = $methodParts[0] ?? 'GET';
-            $uri = trim($rawUri, '/');
-            $normalizedUri = preg_replace('#^api/?#', '', $uri) ?? $uri;
-            $path = '/' . ltrim($normalizedUri, '/');
-            $path = rtrim($path, '/');
-            $path = $path === '' ? '/' : $path;
             $action = (string) ($route['action'] ?? '');
             $controller = '';
             $methodName = '';
@@ -305,26 +354,29 @@ final class OpenApiGenerator
             $operation['security'] = [['bearerAuth' => []]];
         }
 
-        if ($this->isBodyMethod($route->method)) {
-            $formRequest = (string) ($controllerData['form_request'] ?? '');
-            if ($formRequest !== '') {
-                $requestFile = $this->resolveRequestFile($formRequest);
-                if ($requestFile !== null) {
-                    if (!isset($requestParseCache[$requestFile])) {
-                        $requestParseCache[$requestFile] = $this->formRequestParser->parseRules($requestFile);
-                    }
-                    $requestFields = $requestParseCache[$requestFile];
+        $formRequest = (string) ($controllerData['form_request'] ?? '');
+        if ($formRequest !== '') {
+            $requestFile = $this->resolveRequestFile($formRequest);
+            if ($requestFile !== null) {
+                if (!isset($requestParseCache[$requestFile])) {
+                    $requestParseCache[$requestFile] = $this->formRequestParser->parseRules($requestFile);
                 }
+                $requestFields = $requestParseCache[$requestFile];
             }
+        }
 
-            if ($requestFields === []) {
-                $inlineValidationRules = $controllerData['inline_validation_rules'] ?? [];
-                if (is_array($inlineValidationRules)) {
-                    $requestFields = array_values(array_filter($inlineValidationRules, static fn (mixed $field): bool => is_array($field)));
-                }
+        if ($requestFields === []) {
+            $inlineValidationRules = $controllerData['inline_validation_rules'] ?? [];
+            if (is_array($inlineValidationRules)) {
+                $requestFields = array_values(array_filter($inlineValidationRules, static fn (mixed $field): bool => is_array($field)));
             }
+        }
 
+        if ($requestFields !== []) {
             $this->collectValidationReviewItems($route, $requestFields);
+        }
+
+        if ($this->isBodyMethod($route->method) && $requestFields !== []) {
             $schema = $this->buildRequestSchema($requestFields);
 
             $operation['requestBody'] = [
@@ -336,6 +388,8 @@ final class OpenApiGenerator
                     ],
                 ],
             ];
+        } elseif (!$this->isBodyMethod($route->method) && $requestFields !== []) {
+            $operation['parameters'] = $this->buildQueryParameters($requestFields);
         }
 
         $this->collectResponseReviewItems($route, $controllerData);
@@ -391,6 +445,40 @@ final class OpenApiGenerator
         }
 
         return $schema;
+    }
+
+    /**
+     * @param list<array<string,mixed>> $requestFields
+     * @return list<array<string,mixed>>
+     */
+    private function buildQueryParameters(array $requestFields): array
+    {
+        $parameters = [];
+
+        foreach ($requestFields as $field) {
+            $name = (string) ($field['field'] ?? '');
+            if ($name === '') {
+                continue;
+            }
+
+            $parameter = [
+                'name' => $name,
+                'in' => 'query',
+                'required' => (bool) ($field['required'] ?? false),
+                'schema' => $this->fieldSchema($field),
+            ];
+
+            $example = $this->exampleForField($field);
+            if ($example !== null) {
+                $parameter['example'] = $example;
+            }
+
+            $parameters[] = $parameter;
+        }
+
+        usort($parameters, static fn (array $left, array $right): int => [$left['name'], $left['in']] <=> [$right['name'], $right['in']]);
+
+        return $parameters;
     }
 
     /**
@@ -1262,10 +1350,7 @@ final class OpenApiGenerator
                 'description' => '由 Laravel routes 自動產出的 API 文件',
                 'version' => '1.0.0',
             ],
-            'servers' => [
-                ['url' => 'http://localhost:8000/api', 'description' => '本地開發環境'],
-                ['url' => 'https://api.example.com', 'description' => '正式環境'],
-            ],
+            'servers' => PathStrategy::defaultServers($this->pathStrategy()),
             'components' => [
                 'securitySchemes' => [
                     'bearerAuth' => [

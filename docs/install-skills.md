@@ -31,6 +31,14 @@ npx skills add tom54699/agent-skills --skill laravel-api-docs --global
 - 用途：以 guided-sync 流程同步 Laravel API 文件、Apidog 與 HTML 輸出
 - 流程文件：`docs/laravel-api-docs-guided-sync.md`
 
+## 更新提醒現況
+
+目前 repo-based 安裝後，skill 不會主動通知使用者有新版本。
+
+- 若要取得更新，需重新執行安裝指令
+- 建議關注 repo 的 releases / commit 更新
+- 執行期比對遠端版本並提示更新，仍是後續規劃項目
+
 ## Experimental Skill 規則
 
 `skills/.experimental/` 內的 skill 不視為穩定介面。若要公開給其他人安裝，建議先搬到 `skills/.curated/` 後再寫入正式安裝文件。

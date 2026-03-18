@@ -21,6 +21,8 @@ final class ActionMetadata
         public readonly bool $baseExceptionGetterUsage,
         public readonly bool $throwableFallbackDetected,
         public readonly int $apiResponseCount,
+        public readonly int $documentationParameterCount,
+        public readonly int $documentationResponseCount,
         public readonly array $serviceCalls,
         public readonly array $exceptionRefs,
     ) {

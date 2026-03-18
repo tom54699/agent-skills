@@ -2,6 +2,8 @@
 
 namespace LaravelApiDocs\InferCandidates;
 
+use LaravelApiDocs\PathStrategy;
+
 final class Analyzer
 {
     private readonly ControllerParser $controllerParser;
@@ -11,6 +13,10 @@ final class Analyzer
     private array $timings = [];
     /** @var array<string,string> */
     private array $timingDetails = [];
+    /** @var array<string,array<int,bool>> */
+    private array $changedLineCache = [];
+    /** @var array<string,array{changed:bool,doc_changed:bool,body_changed:bool,doc_lines:list<string>,body_lines:list<string>}> */
+    private array $methodChangeSurfaceCache = [];
 
     public function __construct(
         private readonly AnalyzerOptions $options,
@@ -67,6 +73,8 @@ final class Analyzer
                 'history_base_commit' => $rangeSelection->historyBaseCommit,
                 'range_fallback_reason' => $rangeSelection->rangeFallbackReason,
                 'last_success_synced_at' => $rangeSelection->lastSuccessSyncedAt,
+                'path_strategy' => $rangeSelection->pathStrategy,
+                'path_strategy_source' => $rangeSelection->pathStrategySource,
                 'baseline_source' => $rangeSelection->baselineSource,
                 'has_success_history' => $rangeSelection->hasSuccessHistory,
                 'has_openapi_baseline' => $rangeSelection->hasOpenApiBaseline,
@@ -117,6 +125,8 @@ final class Analyzer
         $lastSuccessRecord = $this->readLastSuccessRecord();
         $lastSuccessSyncedAt = $lastSuccessRecord['synced_at'];
         $lastSuccessCommit = $lastSuccessRecord['git_head_commit'];
+        $pathStrategy = $this->options->pathStrategy;
+        $pathStrategySource = $pathStrategy !== null ? 'cli' : 'none';
 
         if ($lastSuccessSyncedAt !== null) {
             if (!$this->isUtcIso8601($lastSuccessSyncedAt)) {
@@ -124,6 +134,20 @@ final class Analyzer
             }
             $fromTime = $lastSuccessSyncedAt;
             $hasSuccessHistory = true;
+        }
+
+        if ($pathStrategy === null) {
+            $historyPathStrategy = $lastSuccessRecord['path_strategy'];
+            if ($historyPathStrategy !== null) {
+                $pathStrategy = $historyPathStrategy;
+                $pathStrategySource = 'history';
+            } elseif ($hasOpenApiBaseline) {
+                $detectedPathStrategy = $this->detectPathStrategyFromOpenApi();
+                if ($detectedPathStrategy !== null) {
+                    $pathStrategy = $detectedPathStrategy;
+                    $pathStrategySource = 'openapi_baseline';
+                }
+            }
         }
 
         if ($hasSuccessHistory && $this->options->fromCommit === null) {
@@ -159,13 +183,26 @@ final class Analyzer
             if (!$this->gitIsAncestor($fromCommit, 'HEAD')) {
                 throw new \RuntimeException("錯誤：--from-commit 不是目前 HEAD 的祖先，無法建立範圍：{$fromCommit}..HEAD");
             }
+            $inclusiveBaseCommit = $this->gitParentCommit($fromCommit);
+            if ($inclusiveBaseCommit === null) {
+                throw new \RuntimeException("錯誤：--from-commit 沒有 parent，初始化目前不支援以 root commit 作為起點：{$fromCommit}");
+            }
             $fromTime = $this->epochToUtc(trim($this->shell->mustRun(['git', 'show', '-s', '--format=%ct', $fromCommit])));
-            $diffRange = "{$fromCommit}..HEAD";
+            $diffRange = "{$inclusiveBaseCommit}..HEAD";
             $diffRangeSource = 'from_commit';
             $changedFiles = $this->changedFilesFromDiff($diffRange);
             if (!$hasOpenApiBaseline) {
                 $baselineSource = 'none';
             }
+        }
+
+        if ($pathStrategy === null) {
+            if ($initMode === 'initialization') {
+                throw new \RuntimeException('錯誤：初始化必須提供 --path-strategy，或先準備可辨識路徑策略的 OpenAPI baseline。');
+            }
+
+            $pathStrategy = PathStrategy::STRIP_API_PREFIX_TO_SERVER;
+            $pathStrategySource = 'legacy_default';
         }
 
         $this->events->debug('range selection', [
@@ -175,6 +212,8 @@ final class Analyzer
             'history_base_commit' => $historyBaseCommit,
             'range_fallback_reason' => $rangeFallbackReason,
             'last_success_synced_at' => $lastSuccessSyncedAt,
+            'path_strategy' => $pathStrategy,
+            'path_strategy_source' => $pathStrategySource,
             'from_time' => $fromTime,
             'to_time' => $toTime,
         ]);
@@ -199,6 +238,8 @@ final class Analyzer
             historyBaseCommit: $historyBaseCommit,
             rangeFallbackReason: $rangeFallbackReason,
             lastSuccessSyncedAt: $lastSuccessSyncedAt,
+            pathStrategy: $pathStrategy,
+            pathStrategySource: $pathStrategySource,
             baselineSource: $baselineSource,
             hasSuccessHistory: $hasSuccessHistory,
             hasOpenApiBaseline: $hasOpenApiBaseline,
@@ -222,21 +263,14 @@ final class Analyzer
             }
 
             $rawUri = (string) ($route['uri'] ?? '');
-            if (!str_starts_with($rawUri, 'api/') && !str_starts_with($rawUri, '/api/')) {
+            $path = PathStrategy::normalizeRoutePath($rawUri, $this->resolvePathStrategy());
+            if ($path === null) {
                 continue;
             }
 
             $methodParts = explode('|', (string) ($route['method'] ?? 'GET'));
             $methodParts = array_values(array_filter(array_map('strtoupper', $methodParts), static fn (string $method): bool => !in_array($method, ['HEAD', 'OPTIONS'], true)));
             $method = strtolower($methodParts[0] ?? 'GET');
-            $uri = trim($rawUri, '/');
-            $normalizedUri = preg_replace('#^api/?#', '', $uri);
-            if ($normalizedUri === null) {
-                $normalizedUri = $uri;
-            }
-            $path = '/' . ltrim($normalizedUri, '/');
-            $trimmedPath = rtrim($path, '/');
-            $path = $trimmedPath === '' ? '/' : $trimmedPath;
             $action = (string) ($route['action'] ?? '');
             $controller = '';
             $methodName = '';
@@ -385,6 +419,8 @@ final class Analyzer
                 baseExceptionGetterUsage: false,
                 throwableFallbackDetected: false,
                 apiResponseCount: 0,
+                documentationParameterCount: 0,
+                documentationResponseCount: 0,
                 serviceCalls: [],
                 exceptionRefs: [],
                 );
@@ -421,6 +457,8 @@ final class Analyzer
                 baseExceptionGetterUsage: (bool) ($decoded['base_exception_getter_usage'] ?? false),
                 throwableFallbackDetected: (bool) ($decoded['throwable_fallback_detected'] ?? false),
                 apiResponseCount: count($decoded['api_responses'] ?? []),
+                documentationParameterCount: count($decoded['documentation_parameters'] ?? []),
+                documentationResponseCount: count($decoded['documentation_responses'] ?? []),
                 serviceCalls: $serviceCalls,
                 exceptionRefs: array_values(array_filter(array_map('strval', $decoded['exception_refs'] ?? []))),
             );
@@ -549,6 +587,61 @@ final class Analyzer
             return [];
         }
 
+        $changedLines = $this->changedLineMapForDiff($relativeFile, $diffRange);
+
+        $lines = file($absolute) ?: [];
+        $methods = [];
+        $currentMethod = null;
+        foreach ($lines as $lineNumber => $line) {
+            if (preg_match('/(?:public|protected|private)\s+function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/', $line, $matches)) {
+                $currentMethod = $matches[1];
+
+                $docStart = $lineNumber + 1;
+                for ($scan = $lineNumber - 1; $scan >= 0; $scan--) {
+                    $candidate = trim($lines[$scan]);
+                    if (
+                        $candidate === ''
+                        || str_starts_with($candidate, '/**')
+                        || str_starts_with($candidate, '*')
+                        || str_starts_with($candidate, '*/')
+                        || str_starts_with($candidate, '//')
+                    ) {
+                        $docStart = $scan + 1;
+                        continue;
+                    }
+
+                    break;
+                }
+
+                for ($docLine = $docStart; $docLine <= $lineNumber + 1; $docLine++) {
+                    if (isset($changedLines[$docLine])) {
+                        $methods[$currentMethod] = true;
+                        break;
+                    }
+                }
+            }
+            if ($currentMethod !== null && isset($changedLines[$lineNumber + 1])) {
+                $methods[$currentMethod] = true;
+            }
+        }
+
+        return array_keys($methods);
+    }
+
+    /**
+     * @return array<int,bool>
+     */
+    private function changedLineMapForDiff(string $relativeFile, ?string $diffRange): array
+    {
+        if ($diffRange === null) {
+            return [];
+        }
+
+        $cacheKey = $diffRange . '|' . $relativeFile;
+        if (isset($this->changedLineCache[$cacheKey])) {
+            return $this->changedLineCache[$cacheKey];
+        }
+
         $diff = $this->shell->mustRun(['git', 'diff', '--unified=0', $diffRange, '--', $relativeFile]);
         preg_match_all('/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/m', $diff, $matches, PREG_SET_ORDER);
         $changedLines = [];
@@ -563,18 +656,221 @@ final class Analyzer
             }
         }
 
-        $methods = [];
-        $currentMethod = null;
-        foreach (file($absolute) ?: [] as $lineNumber => $line) {
-            if (preg_match('/(?:public|protected|private)\s+function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/', $line, $matches)) {
-                $currentMethod = $matches[1];
+        return $this->changedLineCache[$cacheKey] = $changedLines;
+    }
+
+    /**
+     * @return array{changed:bool,doc_changed:bool,body_changed:bool,doc_lines:list<string>,body_lines:list<string>}
+     */
+    private function methodChangeSurface(string $relativeFile, string $methodName, ?string $diffRange): array
+    {
+        $cacheKey = ($diffRange ?? 'none') . '|' . $relativeFile . '|' . $methodName;
+        if (isset($this->methodChangeSurfaceCache[$cacheKey])) {
+            return $this->methodChangeSurfaceCache[$cacheKey];
+        }
+
+        if ($diffRange === null) {
+            return $this->methodChangeSurfaceCache[$cacheKey] = [
+                'changed' => false,
+                'doc_changed' => false,
+                'body_changed' => false,
+                'doc_lines' => [],
+                'body_lines' => [],
+            ];
+        }
+
+        $absolute = $this->options->projectRoot . '/' . ltrim($relativeFile, '/');
+        if (!is_file($absolute)) {
+            return $this->methodChangeSurfaceCache[$cacheKey] = [
+                'changed' => false,
+                'doc_changed' => false,
+                'body_changed' => false,
+                'doc_lines' => [],
+                'body_lines' => [],
+            ];
+        }
+
+        $span = $this->locateMethodLineSpan($absolute, $methodName);
+        if ($span === null) {
+            return $this->methodChangeSurfaceCache[$cacheKey] = [
+                'changed' => false,
+                'doc_changed' => false,
+                'body_changed' => false,
+                'doc_lines' => [],
+                'body_lines' => [],
+            ];
+        }
+
+        $lines = file($absolute) ?: [];
+        $changedLines = $this->changedLineMapForDiff($relativeFile, $diffRange);
+        $docLines = [];
+        $bodyLines = [];
+
+        for ($line = $span['doc_start']; $line < $span['signature_line']; $line++) {
+            if (!isset($changedLines[$line])) {
+                continue;
             }
-            if ($currentMethod !== null && isset($changedLines[$lineNumber + 1])) {
-                $methods[$currentMethod] = true;
+            $docLines[] = rtrim($lines[$line - 1] ?? '');
+        }
+
+        for ($line = $span['signature_line']; $line <= $span['end_line']; $line++) {
+            if (!isset($changedLines[$line])) {
+                continue;
+            }
+            $bodyLines[] = rtrim($lines[$line - 1] ?? '');
+        }
+
+        return $this->methodChangeSurfaceCache[$cacheKey] = [
+            'changed' => $docLines !== [] || $bodyLines !== [],
+            'doc_changed' => $docLines !== [],
+            'body_changed' => $bodyLines !== [],
+            'doc_lines' => $docLines,
+            'body_lines' => $bodyLines,
+        ];
+    }
+
+    /**
+     * @return array{doc_start:int,signature_line:int,end_line:int}|null
+     */
+    private function locateMethodLineSpan(string $absoluteFile, string $methodName): ?array
+    {
+        $lines = file($absoluteFile) ?: [];
+        $total = count($lines);
+
+        for ($index = 0; $index < $total; $index++) {
+            if (preg_match('/(?:public|protected|private)\s+function\s+' . preg_quote($methodName, '/') . '\s*\(/', $lines[$index]) !== 1) {
+                continue;
+            }
+
+            $signatureLine = $index + 1;
+            $docStart = $signatureLine;
+            for ($scan = $index - 1; $scan >= 0; $scan--) {
+                $candidate = trim($lines[$scan]);
+                if (
+                    $candidate === ''
+                    || str_starts_with($candidate, '/**')
+                    || str_starts_with($candidate, '*')
+                    || str_starts_with($candidate, '*/')
+                    || str_starts_with($candidate, '//')
+                ) {
+                    $docStart = $scan + 1;
+                    continue;
+                }
+
+                break;
+            }
+
+            $started = false;
+            $depth = 0;
+            $endLine = $signatureLine;
+            for ($bodyIndex = $index; $bodyIndex < $total; $bodyIndex++) {
+                $line = $lines[$bodyIndex];
+                $length = strlen($line);
+                for ($charIndex = 0; $charIndex < $length; $charIndex++) {
+                    $char = $line[$charIndex];
+                    if ($char === '{') {
+                        $started = true;
+                        $depth++;
+                    } elseif ($char === '}') {
+                        if ($started) {
+                            $depth--;
+                            if ($depth === 0) {
+                                $endLine = $bodyIndex + 1;
+                                break 2;
+                            }
+                        }
+                    }
+                }
+            }
+
+            return [
+                'doc_start' => $docStart,
+                'signature_line' => $signatureLine,
+                'end_line' => $endLine,
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * @param list<string> $docLines
+     */
+    private function documentationLinesTouchSurface(array $docLines): bool
+    {
+        if ($docLines === []) {
+            return false;
+        }
+
+        $joined = $this->normalizeWhitespace(implode("\n", $docLines));
+        if (preg_match('/@(queryParam|bodyParam|urlParam|response|responseFile|responseField)\b/', $joined) === 1) {
+            return true;
+        }
+
+        foreach ($docLines as $line) {
+            $trimmed = trim($line);
+            $trimmed = preg_replace('/^\/\*\*?/', '', $trimmed) ?? $trimmed;
+            $trimmed = preg_replace('/^\*/', '', $trimmed) ?? $trimmed;
+            $trimmed = preg_replace('/\*\/$/', '', $trimmed) ?? $trimmed;
+            $trimmed = trim($trimmed);
+            if ($trimmed !== '' && !str_starts_with($trimmed, '@')) {
+                return true;
             }
         }
 
-        return array_keys($methods);
+        return false;
+    }
+
+    /**
+     * @param list<string> $bodyLines
+     */
+    private function bodyLinesTouchRequestContract(array $bodyLines): bool
+    {
+        if ($bodyLines === []) {
+            return false;
+        }
+
+        $joined = $this->normalizeWhitespace(implode("\n", $bodyLines));
+        return preg_match('/->validate\s*\(|Validator::make\s*\(/', $joined) === 1;
+    }
+
+    /**
+     * @param list<string> $bodyLines
+     */
+    private function bodyLinesTouchResponseContract(array $bodyLines): bool
+    {
+        if ($bodyLines === []) {
+            return false;
+        }
+
+        $joined = $this->normalizeWhitespace(implode("\n", $bodyLines));
+        return preg_match('/apiResponse\s*\(|response\(\)->json\s*\(|new\s+JsonResponse\s*\(|return\s+\[|return\s+new\s+[A-Za-z_][A-Za-z0-9_\\\\]*Resource\b|Resource::(make|collection)\s*\(/', $joined) === 1;
+    }
+
+    /**
+     * @param list<string> $bodyLines
+     */
+    private function bodyLinesTouchErrorContract(array $bodyLines): bool
+    {
+        if ($bodyLines === []) {
+            return false;
+        }
+
+        $joined = $this->normalizeWhitespace(implode("\n", $bodyLines));
+        return preg_match('/throw\s+new\s+|catch\s*\(|getErrorCode\s*\(|getStatusCode\s*\(|getData\s*\(|ValidationException\b/', $joined) === 1;
+    }
+
+    /**
+     * @param list<string> $bodyLines
+     */
+    private function serviceBodyLinesTouchContract(array $bodyLines): bool
+    {
+        if ($bodyLines === []) {
+            return false;
+        }
+
+        $joined = $this->normalizeWhitespace(implode("\n", $bodyLines));
+        return preg_match('/throw\s+new\s+|catch\s*\(|getErrorCode\s*\(|getStatusCode\s*\(|getData\s*\(|ValidationException\b|apiResponse\s*\(|response\(\)->json\s*\(|new\s+JsonResponse\s*\(|return\s+new\s+[A-Za-z_][A-Za-z0-9_\\\\]*Resource\b|Resource::(make|collection)\s*\(/', $joined) === 1;
     }
 
     private function stripNonJsonPrefix(string $value): string
@@ -676,6 +972,8 @@ final class Analyzer
                 baseExceptionGetterUsage: false,
                 throwableFallbackDetected: false,
                 apiResponseCount: 0,
+                documentationParameterCount: 0,
+                documentationResponseCount: 0,
                 serviceCalls: [],
                 exceptionRefs: [],
             );
@@ -817,13 +1115,38 @@ final class Analyzer
             $dependencyActionHit = false;
             $routeActionHit = false;
             $controllerActionHit = false;
+            $documentationAnnotationHit = false;
+            $controllerDocChanged = false;
+            $controllerBodyChanged = false;
+            $weakControllerBodyHit = false;
+            $weakServiceBodyHit = false;
+            $strongSignalTypes = [];
+            $weakSignalTypes = [];
             $matchedServiceMethods = [];
             $inDoc = isset($docKeyMap[$routeKey]);
             $missingFromBaseline = isset($newKeyMap[$routeKey]);
+            $controllerSurface = [
+                'changed' => false,
+                'doc_changed' => false,
+                'body_changed' => false,
+                'doc_lines' => [],
+                'body_lines' => [],
+            ];
+
+            if ($controllerFile !== null && $changeIndex->diffRange !== null) {
+                $controllerSurface = $this->methodChangeSurface($controllerFile, $actionName, $changeIndex->diffRange);
+                $controllerDocChanged = $controllerSurface['doc_changed'];
+                $controllerBodyChanged = $controllerSurface['body_changed'];
+            } elseif ($controllerFile !== null && $changeIndex->diffRange === null && $changeIndex->hasChangedFile($controllerFile)) {
+                $controllerSurface['changed'] = true;
+                $controllerSurface['body_changed'] = true;
+                $controllerBodyChanged = true;
+            }
 
             if ($changeIndex->routesChanged() && $this->hasRouteActionHint($changeIndex, $route->controller, $actionName)) {
                 $routeActionHit = true;
                 $reasons[] = "route action changed: {$route->controller}@{$actionName}";
+                $strongSignalTypes[] = 'route_mapping';
                 $confidenceRank = max($confidenceRank, 3);
                 if (!$rangeSelection->hasOpenApiBaseline || !$inDoc) {
                     $status = 'new';
@@ -833,22 +1156,58 @@ final class Analyzer
                 }
             }
 
-            if ($controllerFile !== null && $changeIndex->diffRange !== null && $this->isChangedControllerAction($changeIndex, $controllerFile, $actionName)) {
+            $controllerDocumentationChanged = $controllerDocChanged
+                && $this->documentationLinesTouchSurface($controllerSurface['doc_lines']);
+            $controllerRequestContractHit = $controllerBodyChanged
+                && $this->bodyLinesTouchRequestContract($controllerSurface['body_lines']);
+            $controllerResponseContractHit = $controllerBodyChanged
+                && $this->bodyLinesTouchResponseContract($controllerSurface['body_lines']);
+            $controllerErrorContractHit = $controllerBodyChanged
+                && $this->bodyLinesTouchErrorContract($controllerSurface['body_lines']);
+
+            if ($controllerDocumentationChanged) {
                 $controllerActionHit = true;
                 $updatedSignal = true;
-                $reasons[] = "controller action changed: {$controllerFile}@{$actionName}";
+                $documentationAnnotationHit = true;
+                $strongSignalTypes[] = 'documentation_annotation';
+                $reasons[] = "controller documentation changed: {$controllerFile}@{$actionName}";
                 $confidenceRank = max($confidenceRank, 3);
-            } elseif ($controllerFile !== null && $changeIndex->diffRange === null && $changeIndex->hasChangedFile($controllerFile)) {
+            }
+
+            if ($controllerRequestContractHit) {
                 $controllerActionHit = true;
                 $updatedSignal = true;
-                $reasons[] = "controller changed: {$controllerFile}";
+                $strongSignalTypes[] = 'request_contract';
+                $reasons[] = "controller request-contract changed: {$controllerFile}@{$actionName}";
                 $confidenceRank = max($confidenceRank, 2);
+            }
+
+            if ($controllerResponseContractHit) {
+                $controllerActionHit = true;
+                $updatedSignal = true;
+                $strongSignalTypes[] = 'response_contract';
+                $reasons[] = "controller response-contract changed: {$controllerFile}@{$actionName}";
+                $confidenceRank = max($confidenceRank, 2);
+            }
+
+            if ($controllerErrorContractHit) {
+                $controllerActionHit = true;
+                $updatedSignal = true;
+                $strongSignalTypes[] = 'error_contract';
+                $reasons[] = "controller error-contract changed: {$controllerFile}@{$actionName}";
+                $confidenceRank = max($confidenceRank, 2);
+            }
+
+            if ($controllerBodyChanged && !$controllerDocumentationChanged && !$controllerRequestContractHit && !$controllerResponseContractHit && !$controllerErrorContractHit) {
+                $weakControllerBodyHit = true;
+                $weakSignalTypes[] = 'controller_body';
             }
 
             if ($formRequestChanged) {
                 $requestBoundHit = true;
                 $dependencyActionHit = true;
                 $updatedSignal = true;
+                $strongSignalTypes[] = 'request_contract';
                 $reasons[] = "request action-bound change: {$controllerFile}@{$actionName} uses {$formRequestFile}";
                 $confidenceRank = max($confidenceRank, 2);
             }
@@ -857,6 +1216,7 @@ final class Analyzer
                 $resourceBoundHit = true;
                 $dependencyActionHit = true;
                 $updatedSignal = true;
+                $strongSignalTypes[] = 'response_contract';
                 $reasons[] = "resource action-bound change: {$controllerFile}@{$actionName} uses {$resourceFile}";
                 $confidenceRank = max($confidenceRank, 2);
             }
@@ -866,18 +1226,23 @@ final class Analyzer
                 $changedServiceMethods = $changeIndex->changedServiceMethods[$serviceFile] ?? [];
                 $matchedServiceMethods = array_values(array_intersect($relevantActionMethods, $changedServiceMethods));
 
-                if ($matchedServiceMethods !== []) {
+                if (
+                    $matchedServiceMethods !== []
+                    && $this->serviceMethodsAffectContract($serviceMetadata, $serviceFile, $changeIndex->diffRange, $matchedServiceMethods)
+                ) {
                     $serviceMethodHit = true;
                     $dependencyActionHit = true;
                     $serviceChanged = true;
                     $updatedSignal = true;
-                    $reasons[] = 'service method change: ' . $serviceFile . ' -> ' . implode(', ', $matchedServiceMethods) . " used by {$controllerFile}@{$actionName}";
+                    $strongSignalTypes[] = 'error_contract';
+                    $reasons[] = 'service error-contract change: ' . $serviceFile . ' -> ' . implode(', ', $matchedServiceMethods) . " used by {$controllerFile}@{$actionName}";
                     $confidenceRank = max($confidenceRank, 3);
-                } elseif ($changedServiceMethods === [] && $this->options->analysisMode === 'enhanced') {
+                } elseif ($matchedServiceMethods !== [] || $changedServiceMethods === []) {
                     $serviceChanged = true;
-                    $updatedSignal = true;
-                    $reasons[] = "service changed (method unresolved fallback): {$serviceFile}";
-                    $confidenceRank = max($confidenceRank, 1);
+                    if ($matchedServiceMethods !== []) {
+                        $weakServiceBodyHit = true;
+                        $weakSignalTypes[] = 'service_body';
+                    }
                 }
             }
 
@@ -888,6 +1253,7 @@ final class Analyzer
                     $exceptionFlowHit = true;
                     $dependencyActionHit = true;
                     $updatedSignal = true;
+                    $strongSignalTypes[] = 'error_contract';
                     $reasons[] = "exception action-bound change: {$controllerFile}@{$actionName} references {$exceptionFile}";
                     $confidenceRank = max($confidenceRank, 2);
                 }
@@ -902,6 +1268,7 @@ final class Analyzer
                             $exceptionFlowHit = true;
                             $dependencyActionHit = true;
                             $updatedSignal = true;
+                            $strongSignalTypes[] = 'error_contract';
                             $reasons[] = "exception flow via service method: {$serviceFile}::{$methodName} -> {$exceptionFile}";
                             $confidenceRank = max($confidenceRank, 2);
                         }
@@ -965,6 +1332,11 @@ final class Analyzer
                     'exceptions_changed' => $exceptionsChanged,
                     'route_action_hit' => $routeActionHit,
                     'controller_action_hit' => $controllerActionHit,
+                    'documentation_annotation_hit' => $documentationAnnotationHit,
+                    'controller_doc_changed' => $controllerDocChanged,
+                    'controller_body_changed' => $controllerBodyChanged,
+                    'weak_controller_body_hit' => $weakControllerBodyHit,
+                    'weak_service_body_hit' => $weakServiceBodyHit,
                     'request_bound_hit' => $requestBoundHit,
                     'resource_bound_hit' => $resourceBoundHit,
                     'service_method_hit' => $serviceMethodHit,
@@ -972,8 +1344,12 @@ final class Analyzer
                     'dependency_action_hit' => $dependencyActionHit,
                     'request_rule_count' => $requestRuleCount,
                     'api_response_count' => $actionMetadata->apiResponseCount,
+                    'documentation_parameter_count' => $actionMetadata->documentationParameterCount,
+                    'documentation_response_count' => $actionMetadata->documentationResponseCount,
                     'service_exception_count' => $serviceExceptionCount,
                     'matched_service_methods' => array_values($matchedServiceMethods),
+                    'strong_signal_types' => $this->sortUnique($strongSignalTypes),
+                    'weak_signal_types' => $this->sortUnique($weakSignalTypes),
                     'in_openapi_baseline' => $inDoc,
                     'missing_from_openapi_baseline' => $missingFromBaseline,
                 ],
@@ -1078,18 +1454,58 @@ final class Analyzer
         return array_keys($hints);
     }
 
+    private function resolvePathStrategy(): string
+    {
+        if ($this->options->pathStrategy !== null) {
+            return $this->options->pathStrategy;
+        }
+
+        $lastSuccessRecord = $this->readLastSuccessRecord();
+        if ($lastSuccessRecord['path_strategy'] !== null) {
+            return $lastSuccessRecord['path_strategy'];
+        }
+
+        $detected = $this->detectPathStrategyFromOpenApi();
+        if ($detected !== null) {
+            return $detected;
+        }
+
+        return PathStrategy::STRIP_API_PREFIX_TO_SERVER;
+    }
+
+    private function detectPathStrategyFromOpenApi(): ?string
+    {
+        $openApiPath = $this->absolutePath($this->options->openApiFile);
+        if ($openApiPath === null) {
+            return null;
+        }
+
+        [$stdout, , $exitCode] = $this->shell->run(['yq', '-o=json', '{paths: (.paths // {}), servers: (.servers // [])}', $openApiPath]);
+        if ($exitCode !== 0 || trim($stdout) === '') {
+            return null;
+        }
+
+        $decoded = json_decode($stdout, true);
+        if (!is_array($decoded)) {
+            return null;
+        }
+
+        return PathStrategy::detectFromOpenApiDocument($decoded);
+    }
+
     /**
-     * @return array{synced_at:?string,git_head_commit:?string}
+     * @return array{synced_at:?string,git_head_commit:?string,path_strategy:?string}
      */
     private function readLastSuccessRecord(): array
     {
         $historyFile = $this->absolutePath($this->options->historyFile);
         if ($historyFile === null) {
-            return ['synced_at' => null, 'git_head_commit' => null];
+            return ['synced_at' => null, 'git_head_commit' => null, 'path_strategy' => null];
         }
 
         $lastSyncedAt = null;
         $lastHeadCommit = null;
+        $lastPathStrategy = null;
         foreach ($this->decodeHistoryRecords($historyFile) as $decoded) {
             if (!is_array($decoded) || ($decoded['status'] ?? null) !== 'success') {
                 continue;
@@ -1102,9 +1518,13 @@ final class Analyzer
             if (is_string($headCommit) && $headCommit !== '') {
                 $lastHeadCommit = $headCommit;
             }
+            $pathStrategy = $decoded['path_strategy'] ?? null;
+            if (is_string($pathStrategy) && PathStrategy::isValid($pathStrategy)) {
+                $lastPathStrategy = PathStrategy::normalize($pathStrategy);
+            }
         }
 
-        return ['synced_at' => $lastSyncedAt, 'git_head_commit' => $lastHeadCommit];
+        return ['synced_at' => $lastSyncedAt, 'git_head_commit' => $lastHeadCommit, 'path_strategy' => $lastPathStrategy];
     }
 
     /**
@@ -1321,11 +1741,10 @@ final class Analyzer
         $changedServiceMethods = $changeIndex->changedServiceMethods[$serviceFile] ?? [];
         $matchedServiceMethods = array_values(array_intersect($relevantActionMethods, $changedServiceMethods));
 
-        if ($matchedServiceMethods !== []) {
-            return true;
-        }
-
-        if ($changedServiceMethods === [] && $this->options->analysisMode === 'enhanced') {
+        if (
+            $matchedServiceMethods !== []
+            && $this->serviceMethodsAffectContract($serviceMetadata, $serviceFile, $changeIndex->diffRange, $matchedServiceMethods)
+        ) {
             return true;
         }
 
@@ -1522,9 +1941,39 @@ final class Analyzer
         return $this->sortUnique($methods);
     }
 
+    /**
+     * @param array{exceptions:list<array<string,mixed>>,error_messages:list<mixed>,base_exception_getter_usage:bool,getter_methods:list<string>,catches_base_exception:bool,method_exceptions:array<string,list<string>>} $serviceMetadata
+     * @param list<string> $matchedServiceMethods
+     */
+    private function serviceMethodsAffectContract(
+        array $serviceMetadata,
+        string $serviceFile,
+        ?string $diffRange,
+        array $matchedServiceMethods
+    ): bool
+    {
+        foreach ($matchedServiceMethods as $methodName) {
+            $surface = $this->methodChangeSurface($serviceFile, $methodName, $diffRange);
+            if (!$surface['body_changed']) {
+                continue;
+            }
+
+            if (($serviceMetadata['method_exceptions'][$methodName] ?? []) !== [] && $this->serviceBodyLinesTouchContract($surface['body_lines'])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private function isBodyMethod(string $method): bool
     {
         return in_array(strtolower($method), ['post', 'put', 'patch'], true);
+    }
+
+    private function normalizeWhitespace(string $value): string
+    {
+        return trim((string) preg_replace('/\s+/', ' ', $value));
     }
 
     private function absolutePath(string $relativePath): ?string
@@ -1557,6 +2006,17 @@ final class Analyzer
     {
         [, , $code] = $this->shell->run(['git', 'merge-base', '--is-ancestor', $ancestor, $descendant]);
         return $code === 0;
+    }
+
+    private function gitParentCommit(string $commit): ?string
+    {
+        [$stdout, , $code] = $this->shell->run(['git', 'rev-parse', $commit . '^']);
+        if ($code !== 0) {
+            return null;
+        }
+
+        $parent = trim($stdout);
+        return $parent !== '' ? $parent : null;
     }
 
     private function time(string $stage, callable $callback): mixed

@@ -86,8 +86,16 @@ description: 以 guided-sync 流程自動同步 Laravel API 文件。流程為�
 - 從 Apidog 匯出後落地為 `docs/api-docs/openapi.yaml`
 - 無基準（只追蹤未來新增 API，不回補舊 API）
 4. 初始化（無 success history）一律要求使用者提供 `from_commit`，並驗證 commit 存在且為 `HEAD` 祖先。
-5. 初始化預設推測 `new + updated`，即使無 OpenAPI 基準也要輸出 `updated` 草案。
-6. 初始化預設不自動推測 `deleted`，避免首次導入誤刪歷史 API 文件。
+5. 初始化的 `from_commit` 採產品語意上的 inclusive 起點：
+- 代表「從這顆 commit 開始算」，必須包含該 commit 本身的修改
+- 系統內部會展開為該 commit 的 parent 到 `HEAD` 的 diff range
+- `meta.from_commit` 保留使用者輸入，`meta.diff_range` 顯示實際展開結果
+- 若指定的是 root commit（沒有 parent），目前直接報錯，要求改用一顆有 parent 的 commit
+6. 初始化一律要求使用者確認 `path strategy`：
+- `keep-full-path`：保留 `/api/admin/...`
+- `strip-api-prefix-to-server`：`paths` 使用 `/admin/...`，由 `servers.url` 承接 `/api`
+7. 初始化預設推測 `new + updated`，即使無 OpenAPI 基準也要輸出 `updated` 草案。
+8. 初始化預設不自動推測 `deleted`，避免首次導入誤刪歷史 API 文件。
 
 ### Step 3：以 commit 範圍為主收斂變更，必要時回退時間窗
 
@@ -102,10 +110,10 @@ description: 以 guided-sync 流程自動同步 Laravel API 文件。流程為�
   - `to_time = 現在 UTC 時間`
   - 用 `git log --since="<from_time>" --until="<to_time>" --name-only` 取得變更檔案
 3. 初始化流程：
-- commit 範圍固定為 `<from_commit>..HEAD`
+- 使用者輸入的 `from_commit` 代表 inclusive 起點，實際分析範圍會展開為 `<from_commit 的 parent>..HEAD`
 - `from_time` 取 `from_commit` 的 commit 時間（轉 UTC ISO 8601）
 - `to_time` 取現在 UTC 時間
-- 用 `git diff --name-only "<from_commit>..HEAD"` 取得變更檔案
+- 用展開後的 `diff_range` 執行 `git diff --name-only` 取得變更檔案
 4. 將 Step 3 結果存成內部分析資料，供 Step 4 推測候選清單。
 
 ### Step 4：AI 推測候選 API 清單（先猜）
@@ -114,13 +122,19 @@ description: 以 guided-sync 流程自動同步 Laravel API 文件。流程為�
 2. 以 `php -n artisan route:list --json` 取得目前路由清單，避免本機 PHP extension warning 汙染 JSON。
 3. 根據變更來源推測候選 endpoint：
 - `routes/*` 變更：高信心候選
-- Controller 變更：以 diff 命中的 `Controller@action` 反查 endpoint（避免整個 controller 全入列）
+- Controller 變更：以 diff 命中的 `Controller@action` 反查 endpoint（避免整個 controller 全入列）；但純 method body diff 只視為弱訊號，不得單獨成立 `updated`
+- function 文件註解變更：屬強訊號，包含 description / summary 與可穩定映射到 OpenAPI 的註解，例如 `@queryParam`、`@bodyParam`、`@urlParam`、`@response`、`@responseFile`、`@responseField`
 - FormRequest 變更：由 FormRequest -> `Controller@action` -> endpoint（標 `updated`）
-- Service 變更：必須先抽出 `Service::method` 變更，再由 `Service::method -> Controller@action -> endpoint`（標 `updated`）
+- Service 變更：純 method body diff 只視為弱訊號；只有在 diff 內容本身可證明改到 response / error contract（例如 exception flow、error payload、response wrapper）時，才可標 `updated`
 - Exception 變更：以 action-scope 判定（Controller action 直接引用，或 action 命中的 service method exception flow 命中）再標 `updated`
 - Resource 變更：由 Resource -> `Controller@action` -> endpoint（標 `updated`）
-4. 日常模式的 `new` / `updated` 只允許來自本次 diff 範圍內的變更訊號；本地 OpenAPI baseline 缺漏只作為 diagnostics，不得直接轉成 candidate。
-5. baseline 的角色：
+4. 純 service 內部流程、局部變數、repository / query 細節若不影響 request / response / error contract，不得單獨產生 `updated`。
+5. 訊號模型：
+- 強訊號：route / endpoint mapping、request validation、response metadata、error contract、function 文件註解
+- 弱訊號：controller method body diff、service method body diff
+- 候選成立規則：強訊號可直接產生 `updated`；弱訊號必須搭配至少一個強訊號，或被解析成明確 contract evidence
+6. 日常模式的 `new` / `updated` 只允許來自本次 diff 範圍內的變更訊號；本地 OpenAPI baseline 缺漏只作為 diagnostics，不得直接轉成 candidate。
+7. baseline 的角色：
 - `new` / `updated` 候選推測：僅供 diagnostics，不直接決定候選
 - `deleted` 候選：僅在日常模式且存在 baseline 時，才可由 route / baseline 差集推測
 - OpenAPI merge：保留作為既有 operation 的 merge 基準
@@ -144,6 +158,7 @@ description: 以 guided-sync 流程自動同步 Laravel API 文件。流程為�
 - `baseline comparison: has_openapi_baseline / doc_keys / route_only_keys / openapi_only_keys`
 - `action hints: route / controller`
 - `candidate signals: service_method_hits / dependency_action_hits / service_action_hints`
+- `path strategy: active / source`
 - `candidate summary: new / updated / deleted / total`
 - `candidate subset: subset / skipped / total_routes`
 - `guided-timing: range_selection / class_index / git_inventory / route_snapshot / action_hints / candidate_evaluation / write_output`
@@ -181,6 +196,7 @@ description: 以 guided-sync 流程自動同步 Laravel API 文件。流程為�
 - **Controller**：提取 PHPDoc、`@throws`、錯誤訊息、方法說明
 - **Service**：分析業務邏輯中的 Exception 與錯誤碼
 - **FormRequest / inline validation**：解析 `rules()`、`$request->validate([...])`、`Validator::make(..., [...])` 並轉為 requestBody/schema
+- **FormRequest / inline validation**：統一先解析 request fields；body methods 轉為 `requestBody`，GET 等 non-body methods 轉為 OpenAPI `parameters`（`in: query`）
 - **Exception**：解析自訂 Exception 的預設錯誤訊息與 HTTP 狀態碼
 - **Resource（可選）**：解析回應欄位結構
 3. 依分析結果更新 `docs/api-docs/openapi.yaml`：
@@ -209,11 +225,11 @@ description: 以 guided-sync 流程自動同步 Laravel API 文件。流程為�
 - `bash "$SKILL_DIR/confirm-openapi-review.sh" --input docs/api-docs/reviews/openapi-review.<timestamp>.json --accept-all --output docs/api-docs/reviews/<timestamp>.approved.json`
 13. 目前 review decision 的最小契約是：每個 unresolved item 都必須被明確 accept，未被 accept 前不得 upload。
 14. `updated` endpoint 的 enrich 目標：
-- requestBody schema 應優先反映常見 Laravel request validation rule，不限於 FormRequest，也包含 controller action 內的 inline validation；至少包含 `nullable`、`string`、`integer`、`numeric`、`boolean`、`array`、`min`、`max`、`between`、`size`、`digits`、`email`、`date`、`in`
+- request input schema 應優先反映常見 Laravel request validation rule，不限於 FormRequest，也包含 controller action 內的 inline validation；至少包含 `nullable`、`string`、`integer`、`numeric`、`boolean`、`array`、`min`、`max`、`between`、`size`、`digits`、`email`、`date`、`in`
 - 應支援 Laravel 常見 array-style rules，且不得因 rule 寫法不同而漏掉欄位
 - 應將 dotted fields 與 wildcard fields（例如 `profile.name`、`items.*.id`）轉成真正的 nested object / array schema，不得平鋪成原始欄位名
 - `Password::min(...)->letters()->numbers()->mixedCase()->symbols()` 應拆成 capability 處理，而不是當成單一 rule 字串
-- requestBody 應產生 deterministic example，至少覆蓋 scalar、enum、array 欄位
+- body methods 的 `requestBody` 與 non-body methods 的 query `parameters` 都應盡量保留 deterministic example、required 與可可靠映射的 schema keyword
 - 無法可靠映射的 request rules（例如 `exists`、`unique`、`required_if`）應保留 unresolved 訊號，例如 `x-laravel-unresolved-rules`，不得直接靜默丟棄
 - responses 應優先補 success example、validation error example、以及 controller / service / exception 可收斂出的錯誤訊號
 - responses 應先分析 controller 實際 return 形式，例如 `response()->json(...)`、`new JsonResponse(...)`、array literal、`JsonResource`、`Resource::collection(...)`
@@ -294,6 +310,7 @@ description: 以 guided-sync 流程自動同步 Laravel API 文件。流程為�
 - `to_time`：本次推測結束時間
 - `git_head_commit`：同步當下 HEAD commit
 - `git_branch`：同步當下分支
+- `path_strategy`：專案採用的 path 表示策略
 - `openapi_sha256`：`docs/api-docs/openapi.yaml` 雜湊
 - `apidog_project_id`：目標 Apidog 專案 ID
 - `imported_count`：新增數量
@@ -305,11 +322,12 @@ description: 以 guided-sync 流程自動同步 Laravel API 文件。流程為�
 範例：
 
 ```json
-{"sync_id":"20260306T161500Z-a1b2c3","synced_at":"2026-03-06T16:15:00Z","from_time":"2026-03-05T10:20:00Z","to_time":"2026-03-06T16:15:00Z","git_head_commit":"a1b2c3d4","git_branch":"main","openapi_sha256":"...","apidog_project_id":"123456","imported_count":8,"updated_count":3,"skipped_count":21,"conflict_count":1,"status":"success"}
+{"sync_id":"20260306T161500Z-a1b2c3","synced_at":"2026-03-06T16:15:00Z","from_time":"2026-03-05T10:20:00Z","to_time":"2026-03-06T16:15:00Z","git_head_commit":"a1b2c3d4","git_branch":"main","path_strategy":"strip-api-prefix-to-server","openapi_sha256":"...","apidog_project_id":"123456","imported_count":8,"updated_count":3,"skipped_count":21,"conflict_count":1,"status":"success"}
 ```
 
 規則：
 - Step 3 日常流程優先使用最後一筆 `status=success` 的 `git_head_commit` 當 commit baseline。
+- 日常與 generator 優先沿用最後一筆 success 的 `path_strategy`；若 legacy history 缺少該欄位，才回退偵測或舊預設。
 - 若 `git_head_commit` 缺失、不可用或不再是 `HEAD` 祖先，才回退使用最後一筆 success 的 `synced_at`。
 - 上傳失敗可記 `failed`，但不可覆蓋成功基準。
 

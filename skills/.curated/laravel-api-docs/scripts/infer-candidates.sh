@@ -22,6 +22,7 @@ Options:
   --history FILE
   --openapi FILE
   --from-commit COMMIT
+  --path-strategy STRATEGY
   --analysis-mode MODE
   --scan-roots ROOTS
   --debug

@@ -15,6 +15,7 @@ REVIEW_DECISION_FILE=""
 REMOTE_OPENAPI_FILE=""
 CONFLICT_FILE=""
 CONFLICT_STRATEGY="keep_remote"
+PATH_STRATEGY=""
 CONFLICT_COUNT=0
 FROM_TIME=""
 TO_TIME=""
@@ -33,6 +34,7 @@ Options:
   --openapi FILE            OpenAPI file path
   --history FILE            Sync history JSONL path
   --candidate-file FILE     Confirmed candidate JSON path
+  --path-strategy STRATEGY  keep-full-path | strip-api-prefix-to-server
   --review-file FILE        Unresolved review artifact JSON path
   --review-decision-file FILE Review decision artifact JSON path
   --remote-openapi FILE     Override remote OpenAPI source for conflict compare
@@ -75,6 +77,29 @@ normalize_spec_to_json_file() {
   fi
 
   yq -o=json '.' "$input_file" | jq -c . >"$output_file"
+}
+
+detect_path_strategy_from_openapi() {
+  local spec_file="$1"
+  local json_file
+  json_file="$(mktemp)"
+  normalize_spec_to_json_file "$spec_file" "$json_file"
+
+  local detected
+  detected="$(jq -r '
+    if ((.paths | keys | map(select(. == "/api" or startswith("/api/"))) | length) > 0) then
+      "keep-full-path"
+    elif ((.paths | keys | length) > 0) then
+      "strip-api-prefix-to-server"
+    elif ((.servers // []) | map(.url // "") | map(select(test("/api(/|$)"))) | length) > 0) then
+      "strip-api-prefix-to-server"
+    else
+      ""
+    end
+  ' "$json_file" 2>/dev/null || true)"
+
+  rm -f "$json_file"
+  printf '%s' "$detected"
 }
 
 extract_operation_signature() {
@@ -499,6 +524,10 @@ while [[ $# -gt 0 ]]; do
       CANDIDATE_FILE="$2"
       shift 2
       ;;
+    --path-strategy)
+      PATH_STRATEGY="$2"
+      shift 2
+      ;;
     --review-file)
       REVIEW_FILE="$2"
       shift 2
@@ -550,6 +579,14 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [ -z "$PATH_STRATEGY" ] && [ -n "$CANDIDATE_FILE" ] && [ -f "$CANDIDATE_FILE" ]; then
+  PATH_STRATEGY="$(jq -r '.meta.path_strategy // ""' "$CANDIDATE_FILE" 2>/dev/null || true)"
+fi
+
+if [ -z "$PATH_STRATEGY" ] && [ -f "$OPENAPI_FILE" ]; then
+  PATH_STRATEGY="$(detect_path_strategy_from_openapi "$OPENAPI_FILE")"
+fi
 
 guided_progress_set_enabled "$PROGRESS_ENABLED"
 trap 'rm -f "$GUIDED_TIMING_FILE"' EXIT
@@ -702,6 +739,7 @@ if [ "$SKIP_HISTORY" = false ]; then
     --synced-at "$SYNCED_AT" \
     --from-time "$FROM_TIME" \
     --to-time "$TO_TIME" \
+    --path-strategy "$PATH_STRATEGY" \
     --status "success" \
     --apidog-project-id "$APIDOG_PROJECT_ID" \
     --imported-count "$IMPORTED_COUNT" \

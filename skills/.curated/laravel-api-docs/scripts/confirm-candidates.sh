@@ -89,6 +89,15 @@ guided_timing_begin "normalize_candidates"
 mkdir -p "$(dirname "$OUTPUT_FILE")"
 
 INPUT_JSON="$(cat "$INPUT_FILE")"
+PATH_STRATEGY="$(
+  echo "$INPUT_JSON" | jq -r '
+    if type == "object" then
+      (.meta.path_strategy // "")
+    else
+      ""
+    end
+  '
+)"
 
 NORMALIZED_CANDIDATES="$(
   echo "$INPUT_JSON" | jq '
@@ -126,13 +135,15 @@ RESULT="$(
     --arg source_candidate_file "$SOURCE_FILE" \
     --arg input_file "$INPUT_FILE" \
     --arg output_file "$OUTPUT_FILE" \
+    --arg path_strategy "$PATH_STRATEGY" \
     --argjson candidates "$NORMALIZED_CANDIDATES" \
     '{
       meta: {
         confirmed_at: $confirmed_at,
         source_candidate_file: $source_candidate_file,
         input_file: $input_file,
-        output_file: $output_file
+        output_file: $output_file,
+        path_strategy: (if $path_strategy == "" then null else $path_strategy end)
       },
       candidate_count: ($candidates | length),
       candidates: $candidates

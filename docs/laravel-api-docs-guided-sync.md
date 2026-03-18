@@ -35,6 +35,7 @@ history 每筆至少包含：
 - `to_time`
 - `git_head_commit`
 - `git_branch`
+- `path_strategy`
 - `openapi_sha256`
 - `apidog_project_id`
 - `imported_count`
@@ -46,6 +47,7 @@ history 每筆至少包含：
 重要約束：
 - `apidog-sync-history.jsonl` 必須使用一行一筆 compact JSON。
 - `git_head_commit` 是日常模式的主基準。
+- `path_strategy` 是 route 與 OpenAPI `paths` 的專案契約，初始化後應固定沿用。
 - `synced_at` 是 fallback 與觀測欄位，不再是日常 candidate inference 的唯一依據。
 
 ## 3. 流程總覽
@@ -74,10 +76,14 @@ guided-sync 只有兩種高階模式：
 2. 初始化模式
 - 沒有任何成功同步紀錄
 - 必須由使用者提供 `--from-commit`
+- `--from-commit` 代表 inclusive 起點，必須包含該 commit 本身的修改
 - 使用者還需要選 baseline 來源：
   - 本地 OpenAPI
   - 從 Apidog 匯出後落地
   - 無 baseline
+- 使用者還需要確認 `path strategy`：
+  - `keep-full-path`：保留 `/api/admin/...`
+  - `strip-api-prefix-to-server`：`paths` 使用 `/admin/...`，由 `servers.url` 承接 `/api`
 
 ### Step 3. 收斂 Git 範圍
 
@@ -105,8 +111,11 @@ fallback 時：
 #### 初始化模式
 
 - 使用者必須提供 `from_commit`
-- diff range 固定為 `<from_commit>..HEAD`
+- `from_commit` 是使用者輸入的起始 commit，產品語意上包含該 commit 本身
+- 實際 `diff_range` 會展開為 `<from_commit 的 parent>..HEAD`
 - `from_time` 取 `from_commit` 的 commit time
+- `changed_files` 來自展開後的 `diff_range`
+- 若 `from_commit` 沒有 parent，初始化直接報錯，要求改提供一顆有 parent 的 commit
 - `deleted` 預設不推測
 
 ## 4. Candidate Inference 真正做什麼
@@ -116,15 +125,22 @@ candidate inference 的目標是找出 impacted endpoints，不是盤點全站�
 輸入：
 - Step 3 的 `changed_files` 與 `diff_range`
 - `php -n artisan route:list --json` 的 route snapshot
-- Controller / Request / Resource / Service / Exception 的關聯資訊
+- Controller / Request / Resource / Exception 與文件表面訊號
 
 主要訊號：
 - `routes/*` 變更
-- controller action diff 命中
+- function 文件註解變更
 - request 變更回推 action
 - resource 變更回推 action
-- service method 變更回推 action
+- service method 只有在可證明影響 response / error contract 時才回推 action
 - exception 變更回推 action 或 service method flow
+
+訊號強弱：
+- 強訊號：route / endpoint mapping、request validation、response metadata、error contract、function 文件註解
+- 弱訊號：controller method body diff、service method body diff
+- function 文件註解包含 description / summary 與可穩定映射到 OpenAPI 的 annotation，例如 `@queryParam`、`@bodyParam`、`@urlParam`、`@response`、`@responseFile`、`@responseField`
+- 純 controller / service body diff 不得單獨產生 `updated`；必須搭配至少一個強訊號，或能從 diff 內容本身證明 contract evidence
+- 一般註解、TODO、內部備註不算文件訊號
 
 ### `new`、`updated`、`deleted` 的責任邊界
 
@@ -133,9 +149,17 @@ candidate inference 的目標是找出 impacted endpoints，不是盤點全站�
 - 不能只因本地 `openapi.yaml` 缺少該 operation 就成立
 
 `updated`
-- 代表既有 endpoint 受本次 controller / request / resource / service / exception 變更影響
+- 代表既有 endpoint 受本次 controller / request / resource / exception / 文件表面變更影響
 - 即使本地 baseline 缺少這支 operation，也仍可輸出 `updated`
 - downstream 需以 upsert 方式處理
+
+不應單獨構成 `updated` 的變更：
+- 純 controller method body diff
+- 純 service 內部流程
+- 純 service method body diff
+- 局部變數調整
+- repository / query 細節修改
+- 其他不影響 request / response / error contract 的內部實作
 
 `deleted`
 - 僅在日常模式且存在 baseline 時產出
@@ -171,6 +195,8 @@ baseline 不應直接用於：
 - `history_base_commit`
 - `range_fallback_reason`
 - `last_success_synced_at`
+- `path_strategy`
+- `path_strategy_source`
 - `baseline_source`
 - `has_success_history`
 - `has_openapi_baseline`
@@ -205,6 +231,11 @@ LLM 必須先與使用者確認候選清單，再進入 OpenAPI 更新。
 - `new`：新增 operation
 - `updated`：以 upsert 方式更新 operation
 - `deleted`：只在明確允許時刪除或標記 deprecated
+
+request input 生成規則：
+- body methods（POST / PUT / PATCH）將 request validation 轉為 `requestBody`
+- GET 等 non-body methods 將 request validation 轉為 `parameters`，預設 `in: query`
+- 第一版只承諾 query parameters，不自動推導 path/header/cookie parameters
 
 這裡 baseline 重新變得重要，因為它是 merge 的既有文件基準。
 

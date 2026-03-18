@@ -2,12 +2,15 @@
 
 namespace LaravelApiDocs\InferCandidates;
 
+use LaravelApiDocs\PathStrategy;
+
 final class AnalyzerOptions
 {
     public function __construct(
         public readonly string $historyFile,
         public readonly string $openApiFile,
         public readonly ?string $fromCommit,
+        public readonly ?string $pathStrategy,
         public readonly string $analysisMode,
         public readonly int $lookbackCommits,
         /** @var list<string> */
@@ -24,6 +27,7 @@ final class AnalyzerOptions
         $historyFile = 'docs/api-docs/history/apidog-sync-history.jsonl';
         $openApiFile = 'docs/api-docs/openapi.yaml';
         $fromCommit = null;
+        $pathStrategy = null;
         $analysisMode = 'fast';
         $lookbackCommits = (int) (getenv('SYNC_LOOKBACK_COMMITS') ?: 50);
         $scanRootsRaw = getenv('SYNC_SCAN_ROOTS') ?: 'app';
@@ -42,6 +46,9 @@ final class AnalyzerOptions
                     break;
                 case '--from-commit':
                     $fromCommit = self::requireValue($argv, ++$i, $arg);
+                    break;
+                case '--path-strategy':
+                    $pathStrategy = PathStrategy::normalize(self::requireValue($argv, ++$i, $arg));
                     break;
                 case '--analysis-mode':
                     $analysisMode = self::requireValue($argv, ++$i, $arg);
@@ -81,6 +88,7 @@ final class AnalyzerOptions
             historyFile: $historyFile,
             openApiFile: $openApiFile,
             fromCommit: $fromCommit,
+            pathStrategy: $pathStrategy,
             analysisMode: $analysisMode,
             lookbackCommits: $lookbackCommits,
             scanRoots: self::normalizeRoots($scanRootsRaw),
@@ -121,6 +129,7 @@ Options:
   --history FILE
   --openapi FILE
   --from-commit COMMIT
+  --path-strategy STRATEGY
   --analysis-mode MODE
   --scan-roots ROOTS
   --debug

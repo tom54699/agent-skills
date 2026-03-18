@@ -20,6 +20,7 @@ IMPORTED_COUNT=0
 UPDATED_COUNT=0
 SKIPPED_COUNT=0
 CONFLICT_COUNT=0
+PATH_STRATEGY=""
 
 usage() {
   cat <<'USAGE'
@@ -32,6 +33,7 @@ Options:
   --synced-at UTC_ISO8601   Sync time (UTC), e.g. 2026-03-06T16:15:00Z
   --from-time UTC_ISO8601   Candidate range start time
   --to-time UTC_ISO8601     Candidate range end time
+  --path-strategy STRATEGY  keep-full-path | strip-api-prefix-to-server
   --status STATUS           success|failed (default: success)
   --apidog-project-id ID    Apidog project id
   --imported-count N        Imported endpoint count
@@ -50,6 +52,25 @@ is_utc_iso8601() {
 ensure_non_negative_int() {
   local value="$1"
   [[ "$value" =~ ^[0-9]+$ ]]
+}
+
+detect_path_strategy_from_openapi() {
+  local openapi_file="$1"
+  local detected=""
+
+  detected="$(yq -o=json '{paths: (.paths // {}), servers: (.servers // [])}' "$openapi_file" 2>/dev/null | jq -r '
+    if ((.paths | keys | map(select(. == "/api" or startswith("/api/"))) | length) > 0) then
+      "keep-full-path"
+    elif ((.paths | keys | length) > 0) then
+      "strip-api-prefix-to-server"
+    elif ((.servers // []) | map(.url // "") | map(capture("^(?<scheme>[a-zA-Z][a-zA-Z0-9+.-]*://)?(?<rest>.*)$").rest // .) | map("/" + (split("/")[1:] | join("/"))) | map(select(. == "/api" or startswith("/api/"))) | length) > 0) then
+      "strip-api-prefix-to-server"
+    else
+      ""
+    end
+  ' 2>/dev/null || true)"
+
+  printf '%s' "$detected"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -76,6 +97,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --to-time)
       TO_TIME="$2"
+      shift 2
+      ;;
+    --path-strategy)
+      PATH_STRATEGY="$2"
       shift 2
       ;;
     --status)
@@ -125,6 +150,15 @@ fi
 
 if [ "$STATUS" != "success" ] && [ "$STATUS" != "failed" ]; then
   echo "錯誤：--status 必須為 success 或 failed" >&2
+  exit 1
+fi
+
+if [ -z "$PATH_STRATEGY" ]; then
+  PATH_STRATEGY="$(detect_path_strategy_from_openapi "$OPENAPI_FILE")"
+fi
+
+if [ -n "$PATH_STRATEGY" ] && [ "$PATH_STRATEGY" != "keep-full-path" ] && [ "$PATH_STRATEGY" != "strip-api-prefix-to-server" ]; then
+  echo "錯誤：--path-strategy 只能是 keep-full-path 或 strip-api-prefix-to-server" >&2
   exit 1
 fi
 
@@ -197,6 +231,7 @@ record="$(
     --arg to_time "$TO_TIME" \
     --arg git_head_commit "$GIT_HEAD_COMMIT" \
     --arg git_branch "$GIT_BRANCH" \
+    --arg path_strategy "$PATH_STRATEGY" \
     --arg openapi_sha256 "$OPENAPI_SHA256" \
     --arg apidog_project_id "$APIDOG_PROJECT_ID" \
     --argjson imported_count "$IMPORTED_COUNT" \
@@ -211,6 +246,7 @@ record="$(
       to_time: $to_time,
       git_head_commit: $git_head_commit,
       git_branch: $git_branch,
+      path_strategy: (if $path_strategy == "" then null else $path_strategy end),
       openapi_sha256: $openapi_sha256,
       apidog_project_id: $apidog_project_id,
       imported_count: $imported_count,

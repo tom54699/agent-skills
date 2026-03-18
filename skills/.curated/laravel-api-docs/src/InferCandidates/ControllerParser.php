@@ -23,6 +23,8 @@ final class ControllerParser
         return [
             'description' => $this->extractDescription($phpDoc),
             'throws' => $this->extractThrows($phpDoc),
+            'documentation_parameters' => $this->extractDocumentationParameters($phpDoc),
+            'documentation_responses' => $this->extractDocumentationResponses($phpDoc),
             'form_request' => $this->findFormRequest($signature),
             'resource' => $this->findResource($methodSource),
             'error_messages' => $this->extractErrorMessages($methodSource),
@@ -222,6 +224,70 @@ final class ControllerParser
         }
 
         return array_values(array_filter($throws, static fn (string $value): bool => $value !== ''));
+    }
+
+    /**
+     * @return list<array{name:string,type:string,description:string,tag:string}>
+     */
+    private function extractDocumentationParameters(string $phpDoc): array
+    {
+        if ($phpDoc === '') {
+            return [];
+        }
+
+        $parameters = [];
+        foreach (preg_split('/\R/', $phpDoc) ?: [] as $line) {
+            $line = trim($line);
+            $line = preg_replace('/^\*/', '', $line) ?? $line;
+            $line = trim($line);
+            if ($line === '') {
+                continue;
+            }
+
+            if (preg_match('/^@(queryParam|bodyParam|urlParam)\s+([A-Za-z0-9_.\-\*]+)(?:\s+([A-Za-z0-9_\[\]\\\\|]+))?(?:\s+(.*))?$/', $line, $matches) !== 1) {
+                continue;
+            }
+
+            $parameters[] = [
+                'tag' => $matches[1],
+                'name' => $matches[2],
+                'type' => trim((string) ($matches[3] ?? '')),
+                'description' => trim((string) ($matches[4] ?? '')),
+            ];
+        }
+
+        return $parameters;
+    }
+
+    /**
+     * @return list<array{tag:string,value:string}>
+     */
+    private function extractDocumentationResponses(string $phpDoc): array
+    {
+        if ($phpDoc === '') {
+            return [];
+        }
+
+        $responses = [];
+        foreach (preg_split('/\R/', $phpDoc) ?: [] as $line) {
+            $line = trim($line);
+            $line = preg_replace('/^\*/', '', $line) ?? $line;
+            $line = trim($line);
+            if ($line === '') {
+                continue;
+            }
+
+            if (preg_match('/^@(response|responseFile|responseField)\b(.*)$/', $line, $matches) !== 1) {
+                continue;
+            }
+
+            $responses[] = [
+                'tag' => $matches[1],
+                'value' => trim((string) ($matches[2] ?? '')),
+            ];
+        }
+
+        return $responses;
     }
 
     private function findFormRequest(string $signature): string

@@ -23,6 +23,7 @@ Options:
   --candidate-file FILE    Apply only endpoints listed in the confirmed candidate file
   --base FILE              Use specified OpenAPI file as merge base
   --review-file FILE       Write unresolved review artifact to the given path
+  --path-strategy STRATEGY Route path strategy: keep-full-path | strip-api-prefix-to-server
   --skip-resource          Reserved for compatibility
   --no-progress            Disable progress output
   -h, --help               Show help
@@ -93,6 +94,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --review-file)
       REVIEW_FILE="$2"
+      FORWARD_ARGS+=("$1" "$2")
+      shift 2
+      ;;
+    --path-strategy)
       FORWARD_ARGS+=("$1" "$2")
       shift 2
       ;;

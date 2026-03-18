@@ -17,6 +17,8 @@ final class RangeSelection
         public readonly ?string $historyBaseCommit,
         public readonly ?string $rangeFallbackReason,
         public readonly ?string $lastSuccessSyncedAt,
+        public readonly string $pathStrategy,
+        public readonly string $pathStrategySource,
         public readonly string $baselineSource,
         public readonly bool $hasSuccessHistory,
         public readonly bool $hasOpenApiBaseline,

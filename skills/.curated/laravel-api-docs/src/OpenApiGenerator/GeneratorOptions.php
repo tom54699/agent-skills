@@ -2,6 +2,8 @@
 
 namespace LaravelApiDocs\OpenApiGenerator;
 
+use LaravelApiDocs\PathStrategy;
+
 final class GeneratorOptions
 {
     public function __construct(
@@ -10,6 +12,7 @@ final class GeneratorOptions
         public readonly bool $skipResource,
         public readonly ?string $candidateFile,
         public readonly ?string $reviewFile,
+        public readonly ?string $pathStrategy,
         public readonly string $outputDir,
         public readonly string $openApiFile,
         public readonly bool $progressEnabled,
@@ -24,6 +27,7 @@ final class GeneratorOptions
         $skipResource = false;
         $candidateFile = null;
         $reviewFile = null;
+        $pathStrategy = null;
         $outputDir = 'docs/api-docs';
         $openApiFile = $outputDir . '/openapi.yaml';
         $progressEnabled = true;
@@ -42,6 +46,9 @@ final class GeneratorOptions
                     break;
                 case '--review-file':
                     $reviewFile = self::requireValue($argv, ++$i, $arg);
+                    break;
+                case '--path-strategy':
+                    $pathStrategy = PathStrategy::normalize(self::requireValue($argv, ++$i, $arg));
                     break;
                 case '--skip-resource':
                     $skipResource = true;
@@ -64,6 +71,7 @@ final class GeneratorOptions
             skipResource: $skipResource,
             candidateFile: $candidateFile,
             reviewFile: $reviewFile,
+            pathStrategy: $pathStrategy,
             outputDir: $outputDir,
             openApiFile: $openApiFile,
             progressEnabled: $progressEnabled,
@@ -90,6 +98,7 @@ Options:
   --candidate-file FILE
   --base FILE
   --review-file FILE
+  --path-strategy STRATEGY
   --skip-resource
   --no-progress
   -h, --help

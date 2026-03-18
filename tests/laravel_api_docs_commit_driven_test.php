@@ -23,6 +23,13 @@ function assertTrueValue(bool $condition, string $message): void
     }
 }
 
+function assertStringContainsValue(string $needle, string $actual, string $message): void
+{
+    if (!str_contains($actual, $needle)) {
+        throw new RuntimeException($message . "\nExpected substring: " . $needle . "\nActual: " . $actual);
+    }
+}
+
 /**
  * @return array{0:string,1:string,2:int}
  */
@@ -217,6 +224,7 @@ function writeHistoryRecord(string $repo, string $fileName, string $syncedAt, ?s
         'skipped_count' => 0,
         'conflict_count' => 0,
         'status' => 'success',
+        'path_strategy' => 'strip-api-prefix-to-server',
     ];
     if ($gitHeadCommit !== null) {
         $record['git_head_commit'] = $gitHeadCommit;
@@ -231,12 +239,18 @@ function writeHistoryRecord(string $repo, string $fileName, string $syncedAt, ?s
 /**
  * @return array<string,mixed>
  */
-function runAnalyzer(string $repo, string $historyFile = 'docs/api-docs/history/apidog-sync-history.jsonl', ?string $fromCommit = null): array
+function runAnalyzer(
+    string $repo,
+    string $historyFile = 'docs/api-docs/history/apidog-sync-history.jsonl',
+    ?string $fromCommit = null,
+    ?string $pathStrategy = null
+): array
 {
     $options = new AnalyzerOptions(
         historyFile: $historyFile,
         openApiFile: 'docs/api-docs/openapi.yaml',
         fromCommit: $fromCommit,
+        pathStrategy: $pathStrategy,
         analysisMode: 'fast',
         lookbackCommits: 50,
         scanRoots: ['app'],
@@ -289,6 +303,39 @@ function createFixtureRepository(): array
     ];
 }
 
+function createInitializationFixtureRepository(): array
+{
+    $repo = sys_get_temp_dir() . '/laravel-api-docs-init-test-' . bin2hex(random_bytes(4));
+    if (!mkdir($repo, 0777, true) && !is_dir($repo)) {
+        throw new RuntimeException('Failed to create temp repo');
+    }
+
+    createArtisan($repo);
+    createOpenApiBaseline($repo);
+    writeFile($repo . '/README.md', "# init test repo\n");
+
+    mustRun(['git', 'init'], $repo);
+    mustRun(['git', 'config', 'user.name', 'Test Runner'], $repo);
+    mustRun(['git', 'config', 'user.email', 'test@example.com'], $repo);
+
+    setRouteState($repo, [
+        ['method' => 'GET', 'path' => '/users', 'controller' => 'UserController', 'action' => 'index'],
+    ]);
+    $commit1 = gitCommit($repo, 'baseline', '2026-03-18T01:00:00Z');
+
+    setRouteState($repo, [
+        ['method' => 'GET', 'path' => '/users', 'controller' => 'UserController', 'action' => 'index'],
+        ['method' => 'POST', 'path' => '/users', 'controller' => 'UserController', 'action' => 'store'],
+    ]);
+    $commit2 = gitCommit($repo, 'add route', '2026-03-18T01:05:00Z');
+
+    return [
+        'repo' => $repo,
+        'commit1' => $commit1,
+        'commit2' => $commit2,
+    ];
+}
+
 function findCandidate(array $result, string $status, string $method, string $path): ?array
 {
     foreach ($result['candidates'] as $candidate) {
@@ -306,12 +353,15 @@ function findCandidate(array $result, string $status, string $method, string $pa
 
 $fixture = createFixtureRepository();
 $repo = $fixture['repo'];
+$initFixture = createInitializationFixtureRepository();
+$initRepo = $initFixture['repo'];
 
 try {
 $dailyNoApi = runAnalyzer($repo);
     assertSameValue('daily', $dailyNoApi['meta']['init_mode'], 'daily mode should be selected when success history exists');
     assertSameValue('last_success_commit', $dailyNoApi['meta']['diff_range_source'], 'daily mode should use commit baseline');
     assertSameValue($fixture['commit1'] . '..HEAD', $dailyNoApi['meta']['diff_range'], 'daily diff range should start from last successful commit');
+    assertSameValue('strip-api-prefix-to-server', $dailyNoApi['meta']['path_strategy'], 'daily mode should expose persisted path strategy');
     assertSameValue(0, $dailyNoApi['candidate_count'], 'non-api changes with thin baseline must not create bulk new candidates');
     assertSameValue(1, $dailyNoApi['indexes']['baseline_gap_route_keys'], 'baseline gap should remain diagnostic-only');
 
@@ -343,7 +393,22 @@ $deletedRoute = runAnalyzer($repo, 'docs/api-docs/history/post-add-route-history
     $deletedCandidate = findCandidate($deletedRoute, 'deleted', 'GET', '/users');
     assertTrueValue($deletedCandidate !== null, 'route removal should still emit deleted candidate when baseline exists');
 
+$inclusiveInitialization = runAnalyzer($initRepo, 'docs/api-docs/history/missing.jsonl', $initFixture['commit2'], 'keep-full-path');
+    assertSameValue('initialization', $inclusiveInitialization['meta']['init_mode'], 'missing history with from-commit should use initialization mode');
+    assertSameValue($initFixture['commit1'] . '..HEAD', $inclusiveInitialization['meta']['diff_range'], 'initialization diff range should include the selected commit itself');
+    assertTrueValue(in_array('routes/api.php', $inclusiveInitialization['changed_files'], true), 'inclusive initialization should include files changed in the selected commit');
+    $inclusiveCandidate = findCandidate($inclusiveInitialization, 'new', 'POST', '/api/users');
+    assertTrueValue($inclusiveCandidate !== null, 'selected initialization commit should contribute its route addition');
+
+    try {
+        runAnalyzer($initRepo, 'docs/api-docs/history/missing.jsonl', $initFixture['commit1'], 'keep-full-path');
+        throw new RuntimeException('root commit should not be accepted as initialization from-commit');
+    } catch (RuntimeException $exception) {
+        assertStringContainsValue('沒有 parent', $exception->getMessage(), 'root commit initialization should fail with a clear error');
+    }
+
     fwrite(STDOUT, "All commit-driven analyzer tests passed.\n");
 } finally {
     removeDirectory($repo);
+    removeDirectory($initRepo);
 }
