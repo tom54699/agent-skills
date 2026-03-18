@@ -1,6 +1,6 @@
 ---
 name: laravel-api-docs
-description: 以 guided-sync 流程自動同步 Laravel API 文件。流程為：AI 先依上次成功同步時間切出 Git 變更範圍並推測候選 API 清單，與使用者討論確認後更新 docs/api-docs/openapi.yaml，同步至 Apidog，最後依需求產生 Redoc HTML。當使用者說「幫我產生 API 文件」、「更新 API 文件」、「文件同步」、「sync api docs」時觸發。僅用於 Laravel 專案。
+description: 以 guided-sync 流程自動同步 Laravel API 文件。流程為：AI 先依上次成功同步 commit 推導 Git 變更範圍並推測候選 API 清單，與使用者討論確認後更新 docs/api-docs/openapi.yaml，同步至 Apidog，最後依需求產生 Redoc HTML。當使用者說「幫我產生 API 文件」、「更新 API 文件」、「文件同步」、「sync api docs」時觸發。僅用於 Laravel 專案。
 ---
 
 # Laravel API 文件同步（guided-sync）
@@ -89,13 +89,18 @@ description: 以 guided-sync 流程自動同步 Laravel API 文件。流程為�
 5. 初始化預設推測 `new + updated`，即使無 OpenAPI 基準也要輸出 `updated` 草案。
 6. 初始化預設不自動推測 `deleted`，避免首次導入誤刪歷史 API 文件。
 
-### Step 3：以時間與 commit 範圍收斂變更
+### Step 3：以 commit 範圍為主收斂變更，必要時回退時間窗
 
 1. 時間格式固定使用 UTC ISO 8601：`YYYY-MM-DDTHH:mm:ssZ`（例如 `2026-03-06T16:15:00Z`）。
 2. 日常流程：
-- `from_time = 最後一筆 success 的 synced_at`
-- `to_time = 現在 UTC 時間`
-- 用 `git log --since="<from_time>" --until="<to_time>" --name-only` 取得變更檔案
+- 優先讀取最後一筆 `status=success` 的 `git_head_commit`
+- 若 `git_head_commit` 存在且仍為目前 `HEAD` 的祖先，diff 範圍固定為 `<git_head_commit>..HEAD`
+- 以 `git diff --name-only "<git_head_commit>..HEAD"` 取得變更檔案
+- `from_time` 可保留最後一筆 success 的 `synced_at` 作為觀測欄位，`to_time` 為目前 UTC 時間
+- 若 `git_head_commit` 缺失、已不存在，或不再是 `HEAD` 祖先，才回退為時間窗模式：
+  - `from_time = 最後一筆 success 的 synced_at`
+  - `to_time = 現在 UTC 時間`
+  - 用 `git log --since="<from_time>" --until="<to_time>" --name-only` 取得變更檔案
 3. 初始化流程：
 - commit 範圍固定為 `<from_commit>..HEAD`
 - `from_time` 取 `from_commit` 的 commit 時間（轉 UTC ISO 8601）
@@ -114,16 +119,25 @@ description: 以 guided-sync 流程自動同步 Laravel API 文件。流程為�
 - Service 變更：必須先抽出 `Service::method` 變更，再由 `Service::method -> Controller@action -> endpoint`（標 `updated`）
 - Exception 變更：以 action-scope 判定（Controller action 直接引用，或 action 命中的 service method exception flow 命中）再標 `updated`
 - Resource 變更：由 Resource -> `Controller@action` -> endpoint（標 `updated`）
-4. 初始化預設輸出 `new + updated`，且預設不輸出 `deleted`。
-5. 產出候選清單到 `docs/api-docs/candidates/<timestamp>.json`，每筆必須包含：
+4. 日常模式的 `new` / `updated` 只允許來自本次 diff 範圍內的變更訊號；本地 OpenAPI baseline 缺漏只作為 diagnostics，不得直接轉成 candidate。
+5. baseline 的角色：
+- `new` / `updated` 候選推測：僅供 diagnostics，不直接決定候選
+- `deleted` 候選：僅在日常模式且存在 baseline 時，才可由 route / baseline 差集推測
+- OpenAPI merge：保留作為既有 operation 的 merge 基準
+6. 初始化預設輸出 `new + updated`，且預設不輸出 `deleted`。
+7. 產出候選清單到 `docs/api-docs/candidates/<timestamp>.json`，每筆必須包含：
 - `status`：`new` | `updated` | `deleted`
 - `method`
 - `path`
 - `change_reason`
 - `confidence`：`high` | `medium` | `low`
 - `missing_fields`：例如 `request_schema_missing`、`response_schema_missing`
-6. `meta` 必須包含：`init_mode`、`baseline_source`、`from_time`、`to_time`、`diff_range_source`、`diff_range`。
-7. 將候選清單呈現給使用者。
+8. `meta` 必須包含：`init_mode`、`baseline_source`、`from_time`、`to_time`、`diff_range_source`、`diff_range`。
+9. 若為日常模式，`meta` 應額外揭露：
+- `history_base_commit`
+- `last_success_synced_at`
+- `range_fallback_reason`（若未 fallback 可為 `null`）
+10. 將候選清單呈現給使用者。
 
 `--debug` 時建議至少輸出：
 - `git change inventory: files / routes / controllers / requests / services / exceptions / resources`
@@ -135,7 +149,7 @@ description: 以 guided-sync 流程自動同步 Laravel API 文件。流程為�
 - `guided-timing: range_selection / class_index / git_inventory / route_snapshot / action_hints / candidate_evaluation / write_output`
 
 補充：
-- `baseline comparison` 在 `has_openapi_baseline=false` 時僅供參考，不代表最終候選數。
+- `baseline comparison` 在所有模式下都應視為 diagnostics；它描述 baseline 缺口，不等於最終候選數。
 - 初始化模式應優先閱讀 `action hints`、`prefilter summary`、`candidate summary` 來判斷收斂效果。
 - 若啟用新版可觀測性，`candidate_subset` 代表真正進入深度 evaluation 的 route 工作集；`candidate_evaluation` 不應再直接掃整份 route snapshot。
 - `infer-candidates.sh` 現在是 PHP analyzer 的 thin wrapper；舊 shell-heavy inference 已移除。
@@ -273,7 +287,7 @@ description: 以 guided-sync 流程自動同步 Laravel API 文件。流程為�
 
 檔案：`docs/api-docs/history/apidog-sync-history.jsonl`
 
-每行一筆 JSON，欄位：
+每行一筆 compact JSON，欄位：
 - `sync_id`：唯一識別碼
 - `synced_at`：ISO 8601 時間（後續 Step 3 日常流程的基準）
 - `from_time`：本次推測起始時間
@@ -295,7 +309,8 @@ description: 以 guided-sync 流程自動同步 Laravel API 文件。流程為�
 ```
 
 規則：
-- Step 3 日常流程只使用最後一筆 `status=success` 的 `synced_at` 當基準。
+- Step 3 日常流程優先使用最後一筆 `status=success` 的 `git_head_commit` 當 commit baseline。
+- 若 `git_head_commit` 缺失、不可用或不再是 `HEAD` 祖先，才回退使用最後一筆 success 的 `synced_at`。
 - 上傳失敗可記 `failed`，但不可覆蓋成功基準。
 
 ## 錯誤處理

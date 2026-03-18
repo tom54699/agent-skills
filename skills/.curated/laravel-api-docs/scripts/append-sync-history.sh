@@ -190,7 +190,7 @@ fi
 mkdir -p "$(dirname "$HISTORY_FILE")"
 
 record="$(
-  jq -n \
+  jq -c -n \
     --arg sync_id "$SYNC_ID" \
     --arg synced_at "$SYNCED_AT" \
     --arg from_time "$FROM_TIME" \

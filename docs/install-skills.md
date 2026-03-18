@@ -29,6 +29,7 @@ npx skills add tom54699/agent-skills --skill laravel-api-docs --global
 
 - 位置：`skills/.curated/laravel-api-docs`
 - 用途：以 guided-sync 流程同步 Laravel API 文件、Apidog 與 HTML 輸出
+- 流程文件：`docs/laravel-api-docs-guided-sync.md`
 
 ## Experimental Skill 規則
 

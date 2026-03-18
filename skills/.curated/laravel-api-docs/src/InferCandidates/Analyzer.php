@@ -40,11 +40,12 @@ final class Analyzer
             'doc_keys' => count($documentRouteKeys),
             'route_only_keys' => count($newRouteKeys),
             'openapi_only_keys' => count($deletedRouteKeys),
-            'informational_only' => !$rangeSelection->hasOpenApiBaseline,
+            'informational_only' => true,
+            'used_for_deleted_only' => $rangeSelection->initMode === 'daily' && $rangeSelection->hasOpenApiBaseline,
         ]);
         $evaluationRoutes = $this->time(
             'candidate_subset',
-            fn (): array => $this->buildEvaluationRoutes($routeIndex, $classIndex, $changeIndex, $actionIndex, $rangeSelection, $documentRouteKeys, $newRouteKeys)
+            fn (): array => $this->buildEvaluationRoutes($routeIndex, $classIndex, $changeIndex, $actionIndex, $rangeSelection)
         );
         $candidates = $this->time(
             'candidate_resolver',
@@ -63,6 +64,9 @@ final class Analyzer
                 'range_source' => $rangeSelection->rangeSource,
                 'diff_range_source' => $rangeSelection->diffRangeSource,
                 'diff_range' => $rangeSelection->diffRange,
+                'history_base_commit' => $rangeSelection->historyBaseCommit,
+                'range_fallback_reason' => $rangeSelection->rangeFallbackReason,
+                'last_success_synced_at' => $rangeSelection->lastSuccessSyncedAt,
                 'baseline_source' => $rangeSelection->baselineSource,
                 'has_success_history' => $rangeSelection->hasSuccessHistory,
                 'has_openapi_baseline' => $rangeSelection->hasOpenApiBaseline,
@@ -86,6 +90,8 @@ final class Analyzer
                 'changed_service_methods' => $changeIndex->changedServiceMethodCount(),
                 'action_metadata' => $actionIndex->count(),
                 'document_route_keys' => count($documentRouteKeys),
+                'baseline_gap_route_keys' => count($newRouteKeys),
+                'baseline_deleted_route_keys' => count($deletedRouteKeys),
             ],
             'timings' => $this->timings,
         ];
@@ -98,13 +104,19 @@ final class Analyzer
         $toTime = gmdate('Y-m-d\TH:i:s\Z');
         $fromTime = null;
         $initMode = 'daily';
-        $rangeSource = 'history_synced_at';
+        $rangeSource = 'history_git_head_commit';
+        $diffRange = null;
+        $diffRangeSource = 'none';
+        $historyBaseCommit = null;
+        $rangeFallbackReason = null;
         $baselineSource = $this->absolutePath($this->options->openApiFile) !== null ? 'local_openapi' : 'none';
         $hasOpenApiBaseline = $baselineSource === 'local_openapi';
         $hasSuccessHistory = false;
         $initIncludeUpdated = true;
         $initExcludeDeleted = true;
-        $lastSuccessSyncedAt = $this->readLastSuccessSyncedAt();
+        $lastSuccessRecord = $this->readLastSuccessRecord();
+        $lastSuccessSyncedAt = $lastSuccessRecord['synced_at'];
+        $lastSuccessCommit = $lastSuccessRecord['git_head_commit'];
 
         if ($lastSuccessSyncedAt !== null) {
             if (!$this->isUtcIso8601($lastSuccessSyncedAt)) {
@@ -118,7 +130,22 @@ final class Analyzer
             if (!$hasOpenApiBaseline) {
                 throw new \RuntimeException("錯誤：找到成功同步歷史，但缺少 {$this->options->openApiFile}，無法做日常推測。");
             }
-            $changedFiles = $this->changedFilesFromTimeWindow($fromTime, $toTime);
+            if ($lastSuccessCommit !== null && $this->gitCommitExists($lastSuccessCommit) && $this->gitIsAncestor($lastSuccessCommit, 'HEAD')) {
+                $historyBaseCommit = $lastSuccessCommit;
+                $diffRange = $lastSuccessCommit . '..HEAD';
+                $diffRangeSource = 'last_success_commit';
+                $changedFiles = $this->changedFilesFromDiff($diffRange);
+            } else {
+                $rangeSource = 'history_time_window_fallback';
+                $rangeFallbackReason = $lastSuccessCommit === null || $lastSuccessCommit === ''
+                    ? 'missing_git_head_commit'
+                    : 'invalid_git_head_commit';
+                if ($fromTime === null) {
+                    throw new \RuntimeException('錯誤：最後一筆 success history 缺少可用的 synced_at，無法回退時間窗推測。');
+                }
+                $changedFiles = $this->changedFilesFromTimeWindow($fromTime, $toTime);
+                [$diffRange, $diffRangeSource] = $this->determineTimeWindowDiffRange($fromTime, $toTime);
+            }
         } else {
             $initMode = 'initialization';
             $rangeSource = 'from_commit_range';
@@ -133,17 +160,21 @@ final class Analyzer
                 throw new \RuntimeException("錯誤：--from-commit 不是目前 HEAD 的祖先，無法建立範圍：{$fromCommit}..HEAD");
             }
             $fromTime = $this->epochToUtc(trim($this->shell->mustRun(['git', 'show', '-s', '--format=%ct', $fromCommit])));
-            $changedFiles = $this->changedFilesFromDiff("{$fromCommit}..HEAD");
+            $diffRange = "{$fromCommit}..HEAD";
+            $diffRangeSource = 'from_commit';
+            $changedFiles = $this->changedFilesFromDiff($diffRange);
             if (!$hasOpenApiBaseline) {
                 $baselineSource = 'none';
             }
         }
 
-        [$diffRange, $diffRangeSource] = $this->determineDiffRange($fromTime, $toTime, $hasSuccessHistory);
         $this->events->debug('range selection', [
             'init_mode' => $initMode,
             'range_source' => $rangeSource,
             'from_commit' => $this->options->fromCommit,
+            'history_base_commit' => $historyBaseCommit,
+            'range_fallback_reason' => $rangeFallbackReason,
+            'last_success_synced_at' => $lastSuccessSyncedAt,
             'from_time' => $fromTime,
             'to_time' => $toTime,
         ]);
@@ -165,6 +196,9 @@ final class Analyzer
             rangeSource: $rangeSource,
             diffRange: $diffRange,
             diffRangeSource: $diffRangeSource,
+            historyBaseCommit: $historyBaseCommit,
+            rangeFallbackReason: $rangeFallbackReason,
+            lastSuccessSyncedAt: $lastSuccessSyncedAt,
             baselineSource: $baselineSource,
             hasSuccessHistory: $hasSuccessHistory,
             hasOpenApiBaseline: $hasOpenApiBaseline,
@@ -608,8 +642,6 @@ final class Analyzer
     }
 
     /**
-     * @param list<string> $documentRouteKeys
-     * @param list<string> $newRouteKeys
      * @return list<RouteCandidateContext>
      */
     private function buildEvaluationRoutes(
@@ -618,11 +650,7 @@ final class Analyzer
         ChangeIndex $changeIndex,
         ActionIndex $actionIndex,
         RangeSelection $rangeSelection,
-        array $documentRouteKeys,
-        array $newRouteKeys,
     ): array {
-        $docKeyMap = array_fill_keys($documentRouteKeys, true);
-        $newKeyMap = array_fill_keys($newRouteKeys, true);
         $serviceMetadataIndex = [];
         $formRequestRuleIndex = [];
         $contexts = [];
@@ -635,7 +663,6 @@ final class Analyzer
 
         foreach ($routeIndex->routes as $index => $route) {
             $current = $index + 1;
-            $routeKey = $route->routeKey();
             $actionName = $route->action !== '' ? $route->action : '__invoke';
             $actionMetadata = $actionIndex->get($route->actionKey()) ?? new ActionMetadata(
                 controller: $route->controller,
@@ -658,18 +685,7 @@ final class Analyzer
             $serviceFile = $this->resolveServiceFile($classIndex, $controllerFile);
             $serviceMetadata = $this->serviceMetadataFor($serviceFile, $serviceMetadataIndex);
             $requestRuleCount = $this->formRequestRuleCountFor($formRequestFile, $formRequestRuleIndex);
-            $inDoc = isset($docKeyMap[$routeKey]);
-            $inNew = isset($newKeyMap[$routeKey]);
             $subsetHit = false;
-
-            if ($rangeSelection->initMode === 'daily' && $rangeSelection->hasOpenApiBaseline && !$inDoc && !$inNew) {
-                $skipped++;
-                continue;
-            }
-
-            if ($rangeSelection->hasOpenApiBaseline && $inNew) {
-                $subsetHit = true;
-            }
 
             if ($changeIndex->routesChanged() && $changeIndex->diffRange !== null && $this->hasRouteActionHint($changeIndex, $route->controller, $actionName)) {
                 $subsetHit = true;
@@ -803,20 +819,17 @@ final class Analyzer
             $controllerActionHit = false;
             $matchedServiceMethods = [];
             $inDoc = isset($docKeyMap[$routeKey]);
-            $inNew = isset($newKeyMap[$routeKey]);
-
-            if ($rangeSelection->hasOpenApiBaseline && $inNew) {
-                $status = 'new';
-                $reasons[] = 'route diff: endpoint exists in Laravel routes but missing in OpenAPI';
-                $confidenceRank = 3;
-            }
+            $missingFromBaseline = isset($newKeyMap[$routeKey]);
 
             if ($changeIndex->routesChanged() && $this->hasRouteActionHint($changeIndex, $route->controller, $actionName)) {
                 $routeActionHit = true;
                 $reasons[] = "route action changed: {$route->controller}@{$actionName}";
                 $confidenceRank = max($confidenceRank, 3);
-                if ($status === null) {
+                if (!$rangeSelection->hasOpenApiBaseline || !$inDoc) {
                     $status = 'new';
+                } else {
+                    $updatedSignal = true;
+                    $status ??= 'updated';
                 }
             }
 
@@ -896,14 +909,8 @@ final class Analyzer
                 }
             }
 
-            if ($status === null) {
-                if ($rangeSelection->initMode === 'initialization') {
-                    if ($updatedSignal) {
-                        $status = 'updated';
-                    }
-                } elseif ($inDoc && $updatedSignal) {
-                    $status = 'updated';
-                }
+            if ($status === null && $updatedSignal) {
+                $status = 'updated';
             }
 
             if ($status === null) {
@@ -967,6 +974,8 @@ final class Analyzer
                     'api_response_count' => $actionMetadata->apiResponseCount,
                     'service_exception_count' => $serviceExceptionCount,
                     'matched_service_methods' => array_values($matchedServiceMethods),
+                    'in_openapi_baseline' => $inDoc,
+                    'missing_from_openapi_baseline' => $missingFromBaseline,
                 ],
             ];
 
@@ -1001,9 +1010,21 @@ final class Analyzer
             $unique[$key] = $candidate;
         }
 
+        $statusCounts = ['new' => 0, 'updated' => 0, 'deleted' => 0];
+        foreach ($unique as $candidate) {
+            $status = (string) ($candidate['status'] ?? '');
+            if (isset($statusCounts[$status])) {
+                $statusCounts[$status]++;
+            }
+        }
+
         $this->events->debug('candidate resolver', [
             'routes' => $totalRoutes,
             'candidate_count' => count($unique),
+            'new_candidates' => $statusCounts['new'],
+            'updated_candidates' => $statusCounts['updated'],
+            'deleted_candidates' => $statusCounts['deleted'],
+            'baseline_gap_route_keys' => count($newRouteKeys),
             'parsed_form_requests' => count($parsedFormRequests),
             'parsed_services' => count($parsedServices),
             'resolved_symbols' => $resolvedSymbols,
@@ -1057,16 +1078,19 @@ final class Analyzer
         return array_keys($hints);
     }
 
-    private function readLastSuccessSyncedAt(): ?string
+    /**
+     * @return array{synced_at:?string,git_head_commit:?string}
+     */
+    private function readLastSuccessRecord(): array
     {
         $historyFile = $this->absolutePath($this->options->historyFile);
         if ($historyFile === null) {
-            return null;
+            return ['synced_at' => null, 'git_head_commit' => null];
         }
 
         $lastSyncedAt = null;
-        foreach (file($historyFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $line) {
-            $decoded = json_decode($line, true);
+        $lastHeadCommit = null;
+        foreach ($this->decodeHistoryRecords($historyFile) as $decoded) {
             if (!is_array($decoded) || ($decoded['status'] ?? null) !== 'success') {
                 continue;
             }
@@ -1074,9 +1098,82 @@ final class Analyzer
             if (is_string($syncedAt) && $syncedAt !== '') {
                 $lastSyncedAt = $syncedAt;
             }
+            $headCommit = $decoded['git_head_commit'] ?? null;
+            if (is_string($headCommit) && $headCommit !== '') {
+                $lastHeadCommit = $headCommit;
+            }
         }
 
-        return $lastSyncedAt;
+        return ['synced_at' => $lastSyncedAt, 'git_head_commit' => $lastHeadCommit];
+    }
+
+    /**
+     * @return list<array<string,mixed>>
+     */
+    private function decodeHistoryRecords(string $historyFile): array
+    {
+        $content = file_get_contents($historyFile);
+        if ($content === false || trim($content) === '') {
+            return [];
+        }
+
+        $records = [];
+        $buffer = '';
+        $depth = 0;
+        $inString = false;
+        $escape = false;
+
+        foreach (str_split($content) as $char) {
+            if ($depth === 0 && trim($char) === '') {
+                continue;
+            }
+
+            $buffer .= $char;
+
+            if ($inString) {
+                if ($escape) {
+                    $escape = false;
+                    continue;
+                }
+
+                if ($char === '\\') {
+                    $escape = true;
+                    continue;
+                }
+
+                if ($char === '"') {
+                    $inString = false;
+                }
+                continue;
+            }
+
+            if ($char === '"') {
+                $inString = true;
+                continue;
+            }
+
+            if ($char === '{') {
+                $depth++;
+                continue;
+            }
+
+            if ($char !== '}') {
+                continue;
+            }
+
+            $depth--;
+            if ($depth !== 0) {
+                continue;
+            }
+
+            $decoded = json_decode($buffer, true);
+            if (is_array($decoded)) {
+                $records[] = $decoded;
+            }
+            $buffer = '';
+        }
+
+        return $records;
     }
 
     /**
@@ -1100,16 +1197,8 @@ final class Analyzer
     /**
      * @return array{0:?string,1:string}
      */
-    private function determineDiffRange(?string $fromTime, string $toTime, bool $hasSuccessHistory): array
+    private function determineTimeWindowDiffRange(string $fromTime, string $toTime): array
     {
-        if ($this->options->fromCommit !== null && $this->options->fromCommit !== '') {
-            return [$this->options->fromCommit . '..HEAD', 'from_commit'];
-        }
-
-        if (!$hasSuccessHistory || $fromTime === null) {
-            return [null, 'none'];
-        }
-
         $stdout = $this->shell->mustRun(['git', 'rev-list', '--reverse', '--since=' . $fromTime, '--until=' . $toTime, 'HEAD']);
         $commits = $this->normalizeFileList(explode("\n", $stdout));
         $firstCommit = $commits[0] ?? null;
@@ -1119,7 +1208,7 @@ final class Analyzer
 
         [$parentStdout, , $parentCode] = $this->shell->run(['git', 'rev-parse', $firstCommit . '^']);
         $diffBaseCommit = $parentCode === 0 ? trim($parentStdout) : $firstCommit;
-        return [$diffBaseCommit . '..HEAD', 'time_window_commit'];
+        return [$diffBaseCommit . '..HEAD', 'time_window_fallback'];
     }
 
     /**
@@ -1440,6 +1529,10 @@ final class Analyzer
 
     private function absolutePath(string $relativePath): ?string
     {
+        if ($relativePath !== '' && str_starts_with($relativePath, '/')) {
+            return is_file($relativePath) ? $relativePath : null;
+        }
+
         $path = $this->options->projectRoot . '/' . ltrim($relativePath, '/');
         return is_file($path) ? $path : null;
     }
