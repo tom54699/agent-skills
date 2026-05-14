@@ -261,12 +261,18 @@ description: 以 guided-sync 流程自動同步 Laravel API 文件。流程為�
 9. 若同步失敗，保留本地檔案並回報錯誤，不寫成功歷史。
 10. `upload-apidog.sh` 應以 confirmed candidate file 中的 `updated` 項目作為 conflict compare 範圍，例如：
 - `bash "$SKILL_DIR/upload-apidog.sh" --openapi docs/api-docs/openapi.yaml --candidate-file docs/api-docs/candidates/<timestamp>.confirmed.json`
-11. 若 `keep_remote` 命中 blocking 衝突，實際上傳內容必須保留遠端 operation，不得以本地版本覆蓋。
-12. `import-openapi` 回傳 HTTP 200/201 與 counters 不足以單獨視為成功；Step 7 必須在上傳後重新 export 遠端 OpenAPI 驗證結果。
-13. 若提供 confirmed candidate file，至少要驗證其中 `new` 與 `updated` endpoint 在遠端 `paths` 中存在；若未提供 candidate file，至少要驗證遠端 export 的 `paths` 非空。
-14. post-upload verification 失敗時，整次同步必須視為失敗，不得寫 success history。
-15. 若提供 `--review-file` 且 review item count 大於 0，Step 7 必須同時提供 `--review-decision-file`，否則 upload 必須在任何遠端請求前就中止。
-16. review decision artifact 必須對應同一份 review artifact，且所有 unresolved item 都要被明確 accept，upload 才可繼續。
+- 預設啟用 **delta 模式**：只上傳 confirmed candidates（`new` + `updated`）對應的 endpoint，其餘 paths 不進 payload，避免觸碰非本次修改的 API。
+- 若使用者要求「完整重建」，加 `--no-delta` 改為全量上傳。
+11. **Path strategy alignment check**（自動執行）：取得 remote OpenAPI 後，自動比對本地 `path_strategy` 與遠端實際 path 前綴；不一致時中止上傳並說明差異。
+- 使用者可選擇：調整 `path_strategy` 後重新執行，或確認無誤後加 `--skip-alignment-check` 繼續。
+- `--skip-alignment-check` 適用於 CI 或已知環境，不建議常態使用。
+- 新增 tag（新資料夾）為正常行為，alignment check 不針對 tags 做警告。
+12. 若 `keep_remote` 命中 blocking 衝突，實際上傳內容必須保留遠端 operation，不得以本地版本覆蓋。
+13. `import-openapi` 回傳 HTTP 200/201 與 counters 不足以單獨視為成功；Step 7 必須在上傳後重新 export 遠端 OpenAPI 驗證結果。
+14. 若提供 confirmed candidate file，至少要驗證其中 `new` 與 `updated` endpoint 在遠端 `paths` 中存在；若未提供 candidate file，至少要驗證遠端 export 的 `paths` 非空。
+15. post-upload verification 失敗時，整次同步必須視為失敗，不得寫 success history。
+16. 若提供 `--review-file` 且 review item count 大於 0，Step 7 必須同時提供 `--review-decision-file`，否則 upload 必須在任何遠端請求前就中止。
+17. review decision artifact 必須對應同一份 review artifact，且所有 unresolved item 都要被明確 accept，upload 才可繼續。
 
 ### Step 8：詢問是否產生 Redoc HTML
 
@@ -380,3 +386,57 @@ guided-sync 目前以 PHP analyzer / generator 為主路徑，請先修正 PHP �
 1. 若使用者明確要求「完整重建」，可在 `guided-sync` 內採全量更新策略。
 2. 候選清單永遠是草案；最終以使用者確認清單為準。
 3. Redoc 用於閱讀；Apidog 用於協作與測試，兩者來源都必須對齊同一版 OpenAPI。
+
+---
+
+## Cherry-pick 模式
+
+### 觸發條件
+
+當使用者說以下任何一種時，進入 cherry-pick 模式，**不走完整 guided-sync 流程**：
+- 「我只想上傳這幾個 API」
+- 「單獨產這幾個 endpoint 的 Redoc」
+- 「cherry-pick」、「挑幾個 API」、「只針對 xxx API」
+
+> 「幫我產生 API 文件」、「更新 API 文件」、「文件同步」仍進入 guided-sync 主流程。
+
+### 流程
+
+1. **列出現有 endpoint 清單**
+   - LLM 讀取 `docs/api-docs/openapi.yaml`，列出所有 `method + path + summary`（每行一筆）。
+
+2. **使用者選取 endpoint**
+   - 支援明確列舉：`GET /users`、`POST /orders`
+   - 支援描述式：「跟付款相關的 API」→ LLM 依 tag / path / summary 推薦候選，使用者確認後才繼續
+   - 每次調整後回顯目前選定清單，直到使用者明確確認
+
+3. **組出 temp subset spec**
+   - LLM 從 `openapi.yaml` 複製選定的 paths，保留完整 `info`、`servers`、`components`、`tags`
+   - 寫入 `/tmp/cherry-pick-<timestamp>.json`
+   - **嚴禁修改或覆蓋 `docs/api-docs/openapi.yaml`**
+
+4. **選擇動作**（可複選）
+   - **上傳 Apidog**：
+     ```bash
+     bash "$SKILL_DIR/upload-apidog.sh" \
+       --openapi /tmp/cherry-pick-<timestamp>.json \
+       --skip-history \
+       --no-delta
+     ```
+     - `--skip-history`：不寫 sync history，不影響 guided-sync 的 Step 3 baseline
+     - `--no-delta`：subset spec 本身就是要全數上傳的內容，不再過濾
+     - 上傳前 LLM **必須**告知使用者：「本次跳過 conflict detection，若遠端有手動修改將被覆蓋，確認繼續？」
+   - **產 Redoc HTML**：
+     ```bash
+     bash "$SKILL_DIR/gen-html.sh" \
+       --openapi /tmp/cherry-pick-<timestamp>.json
+     ```
+     - 輸出位置由使用者指定，或預設寫到 `/tmp/cherry-pick-redoc-<timestamp>.html`
+     - **不覆蓋** `docs/api-docs/redoc/` 下的正式檔案
+
+### 限制
+
+- cherry-pick 不更新 `docs/api-docs/openapi.yaml`
+- cherry-pick 不寫 `apidog-sync-history.jsonl`
+- cherry-pick 上傳不執行 conflict detection（快速通道，使用者需自行確認）
+- cherry-pick 不執行 path strategy alignment check（已知 subset，使用者自行負責）

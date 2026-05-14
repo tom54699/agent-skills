@@ -20,6 +20,8 @@ CONFLICT_COUNT=0
 FROM_TIME=""
 TO_TIME=""
 SKIP_HISTORY=false
+NO_DELTA=false
+SKIP_ALIGNMENT_CHECK=false
 PROGRESS_ENABLED=1
 GUIDED_TIMING_FILE="$(mktemp)"
 UPDATED_CANDIDATE_COUNT=0
@@ -44,6 +46,8 @@ Options:
   --conflict-count N        Deprecated placeholder; actual count comes from conflict result
   --conflict STRATEGY       keep_remote | use_local | manual_merge (default: keep_remote)
   --skip-history            Do not append history after upload
+  --no-delta                Upload full spec instead of filtering to confirmed candidates
+  --skip-alignment-check    Skip path strategy alignment check before upload
   --no-progress             Disable progress output
   -h, --help                Show help
 USAGE
@@ -91,7 +95,7 @@ detect_path_strategy_from_openapi() {
       "keep-full-path"
     elif ((.paths | keys | length) > 0) then
       "strip-api-prefix-to-server"
-    elif ((.servers // []) | map(.url // "") | map(select(test("/api(/|$)"))) | length) > 0) then
+    elif ((.servers // []) | map(.url // "") | map(select(test("/api(/|$)"))) | length > 0) then
       "strip-api-prefix-to-server"
     else
       ""
@@ -510,6 +514,87 @@ apply_keep_remote_strategy() {
   done < <(jq -cr '.[]' "$conflict_file")
 }
 
+build_delta_spec() {
+  local full_spec_file="$1"
+  local candidate_file="$2"
+  local output_file="$3"
+
+  local candidate_paths
+  candidate_paths="$(jq -c '
+    (.candidates // [])
+    | map(select((.status // "" | ascii_downcase) == "new" or (.status // "" | ascii_downcase) == "updated"))
+    | map(.path // "")
+    | map(select(length > 0))
+    | unique
+  ' "$candidate_file")"
+
+  local candidate_count
+  candidate_count="$(echo "$candidate_paths" | jq 'length')"
+
+  if [ "$candidate_count" -eq 0 ]; then
+    echo "警告：candidate file 中無 new/updated 項目，跳過 delta 過濾，改用全量上傳" >&2
+    cp "$full_spec_file" "$output_file"
+    return 0
+  fi
+
+  local delta_path_count
+  delta_path_count="$(jq --argjson paths "$candidate_paths" '
+    (.paths // {}) | keys | map(select(. as $k | $paths | any(. == $k))) | length
+  ' "$full_spec_file")"
+
+  if [ "$delta_path_count" -eq 0 ]; then
+    echo "錯誤：candidate paths 與 local spec 的 path key 無任何匹配" >&2
+    echo "  candidate paths: $(echo "$candidate_paths" | jq -r 'join(", ")')" >&2
+    echo "  請確認 path_strategy 是否與 local spec 一致" >&2
+    return 1
+  fi
+
+  jq --argjson paths "$candidate_paths" '
+    . + {
+      paths: (
+        (.paths // {})
+        | to_entries
+        | map(select(.key as $k | $paths | any(. == $k)))
+        | from_entries
+      )
+    }
+  ' "$full_spec_file" > "$output_file"
+  echo "Delta 模式：從 local spec 過濾出 ${delta_path_count}/${candidate_count} 個 candidate endpoint 上傳" >&2
+}
+
+check_path_strategy_alignment() {
+  local remote_spec_file="$1"
+
+  [ "$SKIP_ALIGNMENT_CHECK" = true ] && return 0
+  [ -z "$PATH_STRATEGY" ] && return 0
+
+  local remote_path_count
+  remote_path_count="$(jq '(.paths // {}) | length' "$remote_spec_file" 2>/dev/null || echo 0)"
+  [ "$remote_path_count" -eq 0 ] && return 0
+
+  local remote_strategy
+  remote_strategy="$(detect_path_strategy_from_openapi "$remote_spec_file")"
+  [ -z "$remote_strategy" ] && return 0
+
+  if [ "$PATH_STRATEGY" != "$remote_strategy" ]; then
+    local remote_sample
+    remote_sample="$(jq -r '(.paths // {}) | keys | .[0:3] | join(", ")' "$remote_spec_file" 2>/dev/null || true)"
+    local local_sample
+    local_sample="$(jq -r '(.paths // {}) | keys | .[0:3] | join(", ")' "$LOCAL_SPEC_JSON_FILE" 2>/dev/null || true)"
+
+    echo "" >&2
+    echo "[Alignment Check] Path strategy 不一致，上傳中止" >&2
+    echo "  本地 path_strategy : $PATH_STRATEGY（例：$local_sample）" >&2
+    echo "  Apidog 偵測 strategy: $remote_strategy（例：$remote_sample）" >&2
+    echo "" >&2
+    echo "  可能導致 endpoint 重複或錯位。" >&2
+    echo "  請確認後以 --skip-alignment-check 繼續，或調整 path_strategy。" >&2
+    return 1
+  fi
+
+  return 0
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --openapi)
@@ -562,6 +647,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-history)
       SKIP_HISTORY=true
+      shift
+      ;;
+    --no-delta)
+      NO_DELTA=true
+      shift
+      ;;
+    --skip-alignment-check)
+      SKIP_ALIGNMENT_CHECK=true
       shift
       ;;
     --no-progress)
@@ -651,6 +744,9 @@ if [ -n "$CANDIDATE_FILE" ]; then
   guided_timing_end "upload-apidog" "fetch_remote_openapi" "candidate_file=$CANDIDATE_FILE"
   guided_progress_emit "upload_apidog" "fetch_remote_openapi" "in_progress" 2 7 "remote openapi fetched"
 
+  check_path_strategy_alignment "$REMOTE_SPEC_JSON_FILE" \
+    || fail "Path strategy 不一致，請確認後以 --skip-alignment-check 繼續"
+
   guided_timing_begin "detect_conflicts"
   detect_conflicts "$LOCAL_SPEC_JSON_FILE" "$REMOTE_SPEC_JSON_FILE" "$CANDIDATE_FILE" "$CONFLICT_FILE"
   guided_timing_end "upload-apidog" "detect_conflicts" "updated=$UPDATED_CANDIDATE_COUNT conflicts=$CONFLICT_COUNT"
@@ -668,6 +764,16 @@ if [ -n "$CANDIDATE_FILE" ]; then
         cp "$LOCAL_SPEC_JSON_FILE" "$UPLOAD_SPEC_JSON_FILE"
         ;;
     esac
+  fi
+
+  if [ "$NO_DELTA" = false ]; then
+    DELTA_SPEC_FILE="$(mktemp)"
+    if build_delta_spec "$UPLOAD_SPEC_JSON_FILE" "$CANDIDATE_FILE" "$DELTA_SPEC_FILE"; then
+      mv "$DELTA_SPEC_FILE" "$UPLOAD_SPEC_JSON_FILE"
+    else
+      rm -f "$DELTA_SPEC_FILE"
+      fail "Delta 過濾失敗：candidate paths 與 local spec 無匹配，上傳中止"
+    fi
   fi
 else
   guided_progress_emit "upload_apidog" "fetch_remote_openapi" "in_progress" 2 7 "no candidate file, remote compare skipped"
