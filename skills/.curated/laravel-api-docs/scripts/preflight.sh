@@ -22,6 +22,7 @@ REQUIRED_DIRS=(
   "docs/api-docs/conflicts"
   "docs/api-docs/reviews"
   "docs/api-docs/redoc"
+  "docs/api-docs/versions"
 )
 
 fail() {

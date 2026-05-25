@@ -27,6 +27,9 @@
 - `docs/api-docs/reviews/<timestamp>.approved.json`
 - `docs/api-docs/redoc/index.html`
 - `docs/api-docs/redoc/api-docs.html`
+- `docs/api-docs/versions/<version-id>/openapi.yaml`
+- `docs/api-docs/versions/<version-id>/redoc/index.html`
+- `docs/api-docs/versions/<version-id>/redoc/api-docs.html`
 
 history 每筆至少包含：
 - `sync_id`
@@ -266,6 +269,15 @@ Redoc HTML 必須在 Apidog sync 完成後才決定是否產生。
 - 再執行 `gen-html.sh --with-extra`
 
 HTML 額外內容不得回寫到 `openapi.yaml`。
+
+正式 HTML 生成時，`docs/api-docs/redoc/` 仍是最新版固定入口；同一次輸出也會建立 `docs/api-docs/versions/<version-id>/` 作為備份。
+
+版本資料夾內容：
+- `openapi.yaml`：本次生成 HTML 時使用的 OpenAPI 快照
+- `redoc/index.html`：本次首頁快照
+- `redoc/api-docs.html`：本次純 Redoc 快照
+
+`<version-id>` 使用本機時間 `YYYYMMDD-HHMMSS`；若同一秒重跑造成路徑已存在，會自動加遞增後綴避免覆蓋。若使用自訂 `--output` 產生臨時 HTML，則不建立正式版本快照。
 
 ## 10. 常見異常與判讀方式
 

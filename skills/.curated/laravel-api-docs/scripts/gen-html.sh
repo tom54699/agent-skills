@@ -10,12 +10,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/progress-lib.sh"
 
 OPENAPI_FILE="docs/api-docs/openapi.yaml"
-OUTPUT_FILE="docs/api-docs/redoc/api-docs.html"
+DEFAULT_OUTPUT_FILE="docs/api-docs/redoc/api-docs.html"
+OUTPUT_FILE="$DEFAULT_OUTPUT_FILE"
 EXTRA_FILE="docs/api-docs/redoc/extra.md"
+VERSION_ROOT="docs/api-docs/versions"
 WITH_EXTRA=false
 PROGRESS_ENABLED=1
 GUIDED_TIMING_FILE="$(mktemp)"
 MARKDOWN_RENDERER="$SCRIPT_DIR/../bin/render-markdown.php"
+VERSION_DIR=""
 
 usage() {
   cat <<'USAGE'
@@ -29,6 +32,24 @@ Options:
   --no-progress    Disable progress output
   -h, --help       Show help
 USAGE
+}
+
+create_version_dir() {
+  local version_id
+  local candidate
+  local counter
+
+  version_id="$(date '+%Y%m%d-%H%M%S')"
+  candidate="$VERSION_ROOT/$version_id"
+  counter=2
+
+  while [ -e "$candidate" ]; do
+    candidate="$VERSION_ROOT/${version_id}-${counter}"
+    counter=$((counter + 1))
+  done
+
+  mkdir -p "$candidate/redoc"
+  printf '%s' "$candidate"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -603,6 +624,13 @@ HOME_TAIL
 
 mv "$HOME_TEMP_OUTPUT_FILE" "$HOME_FILE"
 
+if [ "$OUTPUT_FILE" = "$DEFAULT_OUTPUT_FILE" ]; then
+  VERSION_DIR="$(create_version_dir)"
+  cp "$OPENAPI_FILE" "$VERSION_DIR/openapi.yaml"
+  cp "$HOME_FILE" "$VERSION_DIR/redoc/index.html"
+  cp "$OUTPUT_FILE" "$VERSION_DIR/redoc/api-docs.html"
+fi
+
 guided_timing_end "gen-html" "render_html" "output=$OUTPUT_FILE"
 guided_progress_emit "generate_html" "render_html" "in_progress" 2 3 "html rendered"
 guided_timing_end "gen-html" "html_total" "output=$OUTPUT_FILE"
@@ -617,18 +645,25 @@ if [ "$WITH_EXTRA" = true ]; then
 else
   echo "  - 未提供額外內容，首頁以固定導覽版型輸出" >&2
 fi
+if [ -n "$VERSION_DIR" ]; then
+  echo "  - 已建立版本備份：$VERSION_DIR" >&2
+else
+  echo "  - 自訂輸出路徑不建立正式版本備份" >&2
+fi
 echo "  - 可直接用瀏覽器開啟，無需啟動伺服器" >&2
 
 jq -n \
   --arg file "$OUTPUT_FILE" \
   --arg home_file "$HOME_FILE" \
   --arg extra_file "$EXTRA_FILE" \
+  --arg version_dir "$VERSION_DIR" \
   --argjson with_extra "$(if [ "$WITH_EXTRA" = true ]; then echo true; else echo false; fi)" \
   --argjson timings "$TIMINGS_JSON" \
   '{
     file: $file,
     home_file: $home_file,
     extra_file: (if $with_extra then $extra_file else null end),
+    version_dir: (if $version_dir == "" then null else $version_dir end),
     with_extra: $with_extra,
     timings: $timings,
     message: "已產出摘要首頁與 Redoc API 文件"
