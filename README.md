@@ -25,6 +25,26 @@ npx skills add tom54699/agent-skills --skill laravel-api-docs --agent codex
 npx skills add tom54699/agent-skills --skill laravel-api-docs --global
 ```
 
+## 更新
+
+已安裝過的 skill 可直接使用 `skills` CLI 更新：
+
+```bash
+npx skills update laravel-api-docs
+```
+
+若當初安裝在全域，使用：
+
+```bash
+npx skills update laravel-api-docs -g
+```
+
+若當初安裝在專案內，先進入該專案目錄後使用：
+
+```bash
+npx skills update laravel-api-docs -p
+```
+
 完整安裝說明見 [docs/install-skills.md](docs/install-skills.md)，公開發佈整理見 [docs/publish-skills.md](docs/publish-skills.md)。
 
 ## Curated Skills
