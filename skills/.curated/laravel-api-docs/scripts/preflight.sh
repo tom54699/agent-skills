@@ -21,6 +21,7 @@ REQUIRED_DIRS=(
   "docs/api-docs/candidates"
   "docs/api-docs/conflicts"
   "docs/api-docs/reviews"
+  "docs/api-docs/apidog-tree"
   "docs/api-docs/redoc"
   "docs/api-docs/versions"
 )

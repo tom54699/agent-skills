@@ -21,6 +21,12 @@ FROM_TIME=""
 TO_TIME=""
 SKIP_HISTORY=false
 NO_DELTA=false
+FOLDER_AWARE=true
+ALLOW_ROOT_FOLDER_FALLBACK=false
+APIDOG_TREE_FILE=""
+APIDOG_TREE_OUTPUT=""
+FOLDER_MAPPING_FILE=""
+FOLDER_DECISION_FILE=""
 SKIP_ALIGNMENT_CHECK=false
 PROGRESS_ENABLED=1
 GUIDED_TIMING_FILE="$(mktemp)"
@@ -47,6 +53,15 @@ Options:
   --conflict STRATEGY       keep_remote | use_local | manual_merge (default: keep_remote)
   --skip-history            Do not append history after upload
   --no-delta                Upload full spec instead of filtering to confirmed candidates
+  --no-folder-aware         Disable folder-aware delta upload grouping
+  --allow-root-folder-fallback
+                            Allow unmapped candidates to upload to root folder 0
+  --apidog-tree-file FILE   Use an existing Apidog API tree JSON file
+  --apidog-tree-output FILE Save fetched Apidog API tree JSON to FILE
+  --folder-mapping-file FILE
+                            Save parsed folder mapping JSON to FILE
+  --folder-decision-file FILE
+                            Save resolved candidate folder decisions JSON to FILE
   --skip-alignment-check    Skip path strategy alignment check before upload
   --no-progress             Disable progress output
   -h, --help                Show help
@@ -345,11 +360,232 @@ active_candidates_json() {
     | map(select(((.status // "" | ascii_downcase) == "new") or ((.status // "" | ascii_downcase) == "updated")))
     | map({
         method: ((.method // "") | ascii_downcase),
-        path: (.path // "")
+        path: (.path // ""),
+        folder_id: (
+          if has("folder_id") and (.folder_id != null) and ((.folder_id | tostring) | test("^[0-9]+$")) then
+            (.folder_id | tonumber)
+          else
+            null
+          end
+        )
       })
     | map(select((.method | length > 0) and (.path | length > 0)))
     | unique_by(.method, .path)
   ' "$candidate_file"
+}
+
+fetch_apidog_tree() {
+  local output_file="$1"
+  local response_file
+  local http_code
+  response_file="$(mktemp)"
+
+  http_code="$(curl -s -w "%{http_code}" -o "$response_file" \
+    -X GET "https://api.apidog.com/api/v1/projects/$APIDOG_PROJECT_ID/api-tree-list" \
+    -H "Authorization: Bearer $APIDOG_ACCESS_TOKEN" \
+    -H "X-Apidog-Api-Version: 2024-03-28")"
+
+  if [[ "$http_code" =~ ^30[0-9]$ ]]; then
+    cat "$response_file" >&2 || true
+    rm -f "$response_file"
+    echo "錯誤：api-tree-list 收到 HTTP redirect。此 endpoint 必須使用 /api/v1/ 前綴，不可使用 /v1/。" >&2
+    return 1
+  fi
+
+  if [ "$http_code" -ne 200 ]; then
+    cat "$response_file" >&2 || true
+    if grep -qi "No project guest privilege" "$response_file" 2>/dev/null; then
+      echo "錯誤：Apidog token 或 project 權限不足，無法讀取 API tree。" >&2
+    else
+      echo "錯誤：無法取得 Apidog API tree (HTTP ${http_code})。" >&2
+    fi
+    rm -f "$response_file"
+    return 1
+  fi
+
+  if ! jq -e '(.success == true and (.data != null)) or (.data != null) or (type == "array")' "$response_file" >/dev/null 2>&1; then
+    cat "$response_file" >&2 || true
+    rm -f "$response_file"
+    echo "錯誤：Apidog API tree 回應格式無法辨識。" >&2
+    return 1
+  fi
+
+  mkdir -p "$(dirname "$output_file")"
+  jq '.' "$response_file" >"$output_file"
+  rm -f "$response_file"
+}
+
+build_apidog_folder_mapping() {
+  local tree_file="$1"
+  local output_file="$2"
+
+  jq '
+    def node_type:
+      (.type // .nodeType // .kind // "");
+
+    def node_key:
+      (.key // .id // "");
+
+    def folder_id_from_key:
+      (node_key | tostring) as $key
+      | if ($key | test("[0-9]+$")) then
+          ($key | capture("(?<id>[0-9]+)$").id | tonumber)
+        else
+          null
+        end;
+
+    def child_nodes:
+      (.children // .items // .list // []);
+
+    def walk_tree($folder_id):
+      . as $node
+      | (
+          if ((node_type == "apiDetailFolder") or ((node_key | tostring) | startswith("apiDetailFolder."))) then
+            (folder_id_from_key // $folder_id)
+          else
+            $folder_id
+          end
+        ) as $current_folder_id
+      | (
+          if ((node_type == "apiDetail") or ((.api? | type) == "object" and ((.api.path? // "") != ""))) then
+            {
+              method: ((.api.method // .api.httpMethod // .method // "") | tostring | ascii_downcase),
+              path: ((.api.path // .path // "") | tostring),
+              folder_id: (.api.folderId // .folderId // $current_folder_id)
+            }
+          else
+            empty
+          end
+        ),
+        (child_nodes[]? | walk_tree($current_folder_id));
+
+    def normalize_path:
+      if . == "/" then
+        .
+      else
+        sub("/+$"; "")
+      end;
+
+    def path_prefixes:
+      (.path | normalize_path | split("/") | map(select(length > 0))) as $segments
+      | [
+          range(0; ($segments | length)) as $i
+          | ($segments[0:($i + 1)]) as $parts
+          | select((($parts[0] // "") != "api") or (($parts | length) >= 2))
+          | select(($parts | map(test("\\{")) | any) | not)
+          | "/" + ($parts | join("/"))
+        ];
+
+    [((.data // .) | if type == "array" then .[] else . end | walk_tree(null))]
+    | map(select(
+        (.method | length > 0)
+        and (.path | length > 0)
+        and (.folder_id != null)
+        and ((.folder_id | tostring) | test("^[0-9]+$"))
+      ))
+    | map(. + {path: (.path | normalize_path), folder_id: (.folder_id | tonumber)})
+    | unique_by(.method, .path)
+    | . as $exact
+    | {
+        exact: $exact,
+        prefixes: (
+          $exact
+          | map(. as $entry | ($entry | path_prefixes)[] as $prefix | {prefix: $prefix, folder_id: $entry.folder_id})
+          | sort_by(.prefix)
+          | group_by(.prefix)
+          | map({prefix: .[0].prefix, folder_id: .[0].folder_id})
+          | sort_by(.prefix | length)
+        )
+      }
+  ' "$tree_file" >"$output_file"
+}
+
+resolve_candidate_folder_decisions() {
+  local candidate_file="$1"
+  local mapping_file="$2"
+  local allow_root_fallback="$3"
+  local output_file="$4"
+
+  jq -n \
+    --slurpfile candidates "$candidate_file" \
+    --slurpfile mapping "$mapping_file" \
+    --argjson allow_root_fallback "$allow_root_fallback" \
+    '
+      def normalize_path:
+        if . == "/" then
+          .
+        else
+          sub("/+$"; "")
+        end;
+
+      def active_candidates:
+        ($candidates[0].candidates // [])
+        | map(select(((.status // "" | ascii_downcase) == "new") or ((.status // "" | ascii_downcase) == "updated")))
+        | map({
+            status: (.status // "" | ascii_downcase),
+            method: ((.method // "") | ascii_downcase),
+            path: ((.path // "") | normalize_path),
+            folder_id: (
+              if has("folder_id") and (.folder_id != null) and ((.folder_id | tostring) | test("^[0-9]+$")) then
+                (.folder_id | tonumber)
+              else
+                null
+              end
+            )
+          })
+        | map(select((.method | length > 0) and (.path | length > 0)))
+        | unique_by(.method, .path);
+
+      def exact_folder($candidate):
+        ($mapping[0].exact // [])
+        | map(select(.method == $candidate.method and (.path | normalize_path) == $candidate.path))
+        | .[0].folder_id // null;
+
+      def prefix_folder($candidate):
+        ($mapping[0].prefixes // [])
+        | map(. as $prefix_entry | select(
+            ($candidate.path == ($prefix_entry.prefix | normalize_path))
+            or ($candidate.path | startswith(($prefix_entry.prefix | normalize_path) + "/"))
+          ))
+        | sort_by(.prefix | length)
+        | reverse
+        | .[0].folder_id // null;
+
+      active_candidates
+      | map(. as $candidate
+        | if $candidate.folder_id != null then
+            $candidate + {resolved_folder_id: $candidate.folder_id, folder_source: "candidate.folder_id"}
+          elif (exact_folder($candidate) != null) then
+            $candidate + {resolved_folder_id: exact_folder($candidate), folder_source: "api_tree_exact"}
+          elif (prefix_folder($candidate) != null) then
+            $candidate + {resolved_folder_id: prefix_folder($candidate), folder_source: "api_tree_prefix"}
+          elif $allow_root_fallback then
+            $candidate + {resolved_folder_id: 0, folder_source: "root_fallback"}
+          else
+            $candidate + {resolved_folder_id: null, folder_source: "unmapped"}
+          end
+      ) as $decisions
+      | {
+          decisions: $decisions,
+          unmapped: ($decisions | map(select(.resolved_folder_id == null))),
+          groups: (
+            $decisions
+            | map(select(.resolved_folder_id != null))
+            | sort_by(.resolved_folder_id, .path, .method)
+            | group_by(.resolved_folder_id)
+            | map({
+                folder_id: .[0].resolved_folder_id,
+                candidates: map({
+                  status: .status,
+                  method: (.method | ascii_upcase),
+                  path: .path,
+                  folder_id: .resolved_folder_id,
+                  folder_source: .folder_source
+                })
+              })
+          )
+        }
+    ' >"$output_file"
 }
 
 review_item_count() {
@@ -514,22 +750,79 @@ apply_keep_remote_strategy() {
   done < <(jq -cr '.[]' "$conflict_file")
 }
 
+build_subset_spec_from_candidates_json() {
+  local full_spec_file="$1"
+  local candidates_json="$2"
+  local output_file="$3"
+
+  local candidate_count
+  candidate_count="$(echo "$candidates_json" | jq 'length')"
+
+  local delta_operation_count
+  delta_operation_count="$(jq --argjson candidates "$candidates_json" '
+    def method_keys: ["get", "put", "post", "delete", "options", "head", "patch", "trace"];
+    . as $spec
+    |
+    [
+      $candidates[]
+      | (.path // "") as $candidate_path
+      | ((.method // "") | ascii_downcase) as $candidate_method
+      | select($candidate_path != "" and $candidate_method != "")
+      | select((($spec.paths[$candidate_path] // {}) | has($candidate_method)))
+    ] | length
+  ' "$full_spec_file")"
+
+  if [ "$delta_operation_count" -eq 0 ]; then
+    echo "錯誤：candidate operations 與 local spec 的 path/method 無任何匹配" >&2
+    echo "  candidate operations: $(echo "$candidates_json" | jq -r 'map((.method // "") + " " + (.path // "")) | join(", ")')" >&2
+    echo "  請確認 path_strategy 是否與 local spec 一致" >&2
+    return 1
+  fi
+
+  jq --argjson candidates "$candidates_json" '
+    def method_keys: ["get", "put", "post", "delete", "options", "head", "patch", "trace"];
+    def candidate_methods_for_path($path):
+      $candidates
+      | map(select((.path // "") == $path))
+      | map((.method // "") | ascii_downcase)
+      | unique;
+
+    . + {
+      paths: (
+        (.paths // {})
+        | to_entries
+        | map(. as $path_entry
+          | (candidate_methods_for_path($path_entry.key)) as $candidate_methods
+          | select(($candidate_methods | length) > 0)
+          | {
+              key: $path_entry.key,
+              value: (
+                $path_entry.value
+                | with_entries(. as $operation_entry | select(
+                    ($operation_entry.key == "parameters")
+                    or ((method_keys | index($operation_entry.key)) != null and (($candidate_methods | index($operation_entry.key)) != null))
+                  ))
+              )
+            }
+        )
+        | map(select((.value | keys | map(select(. != "parameters")) | length) > 0))
+        | from_entries
+      )
+    }
+  ' "$full_spec_file" > "$output_file"
+  echo "Delta 模式：從 local spec 過濾出 ${delta_operation_count}/${candidate_count} 個 candidate endpoint 上傳" >&2
+}
+
 build_delta_spec() {
   local full_spec_file="$1"
   local candidate_file="$2"
   local output_file="$3"
 
-  local candidate_paths
-  candidate_paths="$(jq -c '
-    (.candidates // [])
-    | map(select((.status // "" | ascii_downcase) == "new" or (.status // "" | ascii_downcase) == "updated"))
-    | map(.path // "")
-    | map(select(length > 0))
-    | unique
-  ' "$candidate_file")"
+  local candidates_json
+  candidates_json="$(active_candidates_json "$candidate_file")"
 
   local candidate_count
-  candidate_count="$(echo "$candidate_paths" | jq 'length')"
+  candidate_count="$(echo "$candidates_json" | jq 'length')"
 
   if [ "$candidate_count" -eq 0 ]; then
     echo "警告：candidate file 中無 new/updated 項目，跳過 delta 過濾，改用全量上傳" >&2
@@ -537,29 +830,7 @@ build_delta_spec() {
     return 0
   fi
 
-  local delta_path_count
-  delta_path_count="$(jq --argjson paths "$candidate_paths" '
-    (.paths // {}) | keys | map(select(. as $k | $paths | any(. == $k))) | length
-  ' "$full_spec_file")"
-
-  if [ "$delta_path_count" -eq 0 ]; then
-    echo "錯誤：candidate paths 與 local spec 的 path key 無任何匹配" >&2
-    echo "  candidate paths: $(echo "$candidate_paths" | jq -r 'join(", ")')" >&2
-    echo "  請確認 path_strategy 是否與 local spec 一致" >&2
-    return 1
-  fi
-
-  jq --argjson paths "$candidate_paths" '
-    . + {
-      paths: (
-        (.paths // {})
-        | to_entries
-        | map(select(.key as $k | $paths | any(. == $k)))
-        | from_entries
-      )
-    }
-  ' "$full_spec_file" > "$output_file"
-  echo "Delta 模式：從 local spec 過濾出 ${delta_path_count}/${candidate_count} 個 candidate endpoint 上傳" >&2
+  build_subset_spec_from_candidates_json "$full_spec_file" "$candidates_json" "$output_file"
 }
 
 check_path_strategy_alignment() {
@@ -589,6 +860,7 @@ check_path_strategy_alignment() {
     echo "" >&2
     echo "  可能導致 endpoint 重複或錯位。" >&2
     echo "  請確認後以 --skip-alignment-check 繼續，或調整 path_strategy。" >&2
+    fail "Path strategy 不一致"
     return 1
   fi
 
@@ -653,6 +925,30 @@ while [[ $# -gt 0 ]]; do
       NO_DELTA=true
       shift
       ;;
+    --no-folder-aware)
+      FOLDER_AWARE=false
+      shift
+      ;;
+    --allow-root-folder-fallback)
+      ALLOW_ROOT_FOLDER_FALLBACK=true
+      shift
+      ;;
+    --apidog-tree-file)
+      APIDOG_TREE_FILE="$2"
+      shift 2
+      ;;
+    --apidog-tree-output)
+      APIDOG_TREE_OUTPUT="$2"
+      shift 2
+      ;;
+    --folder-mapping-file)
+      FOLDER_MAPPING_FILE="$2"
+      shift 2
+      ;;
+    --folder-decision-file)
+      FOLDER_DECISION_FILE="$2"
+      shift 2
+      ;;
     --skip-alignment-check)
       SKIP_ALIGNMENT_CHECK=true
       shift
@@ -716,6 +1012,10 @@ if [ -n "$CANDIDATE_FILE" ] && [ ! -f "$CANDIDATE_FILE" ]; then
   fail "找不到 --candidate-file 指定檔案：${CANDIDATE_FILE}"
 fi
 
+if [ -n "$APIDOG_TREE_FILE" ] && [ ! -f "$APIDOG_TREE_FILE" ]; then
+  fail "找不到 --apidog-tree-file 指定檔案：${APIDOG_TREE_FILE}"
+fi
+
 if [ -n "$REVIEW_FILE" ]; then
   enforce_review_gate "$REVIEW_FILE" "$REVIEW_DECISION_FILE"
 fi
@@ -731,9 +1031,10 @@ guided_progress_emit "upload_apidog" "validate_input" "in_progress" 1 7 "input v
 LOCAL_SPEC_JSON_FILE="$(mktemp)"
 REMOTE_SPEC_JSON_FILE="$(mktemp)"
 UPLOAD_SPEC_JSON_FILE="$(mktemp)"
+FOLDER_BATCHES_FILE="$(mktemp)"
 TEMP_REQUEST="$(mktemp)"
 TEMP_RESPONSE="$(mktemp)"
-trap 'rm -f "$LOCAL_SPEC_JSON_FILE" "$REMOTE_SPEC_JSON_FILE" "$UPLOAD_SPEC_JSON_FILE" "$TEMP_REQUEST" "$TEMP_RESPONSE" "$GUIDED_TIMING_FILE"' EXIT
+trap 'rm -f "$LOCAL_SPEC_JSON_FILE" "$REMOTE_SPEC_JSON_FILE" "$UPLOAD_SPEC_JSON_FILE" "$FOLDER_BATCHES_FILE" "$TEMP_REQUEST" "$TEMP_RESPONSE" "$GUIDED_TIMING_FILE"' EXIT
 
 normalize_spec_to_json_file "$OPENAPI_FILE" "$LOCAL_SPEC_JSON_FILE"
 cp "$LOCAL_SPEC_JSON_FILE" "$UPLOAD_SPEC_JSON_FILE"
@@ -767,62 +1068,153 @@ if [ -n "$CANDIDATE_FILE" ]; then
   fi
 
   if [ "$NO_DELTA" = false ]; then
-    DELTA_SPEC_FILE="$(mktemp)"
-    if build_delta_spec "$UPLOAD_SPEC_JSON_FILE" "$CANDIDATE_FILE" "$DELTA_SPEC_FILE"; then
-      mv "$DELTA_SPEC_FILE" "$UPLOAD_SPEC_JSON_FILE"
+    if [ "$FOLDER_AWARE" = true ]; then
+      ACTIVE_CANDIDATE_COUNT="$(active_candidates_json "$CANDIDATE_FILE" | jq 'length')"
+      if [ "$ACTIVE_CANDIDATE_COUNT" -eq 0 ]; then
+        DELTA_SPEC_FILE="$(mktemp)"
+        build_delta_spec "$UPLOAD_SPEC_JSON_FILE" "$CANDIDATE_FILE" "$DELTA_SPEC_FILE"
+        mv "$DELTA_SPEC_FILE" "$UPLOAD_SPEC_JSON_FILE"
+        jq -n '[{folder_id: 0, candidates: null}]' >"$FOLDER_BATCHES_FILE"
+      else
+      ts="${ts:-$(date -u +"%Y%m%dT%H%M%SZ")}"
+
+      if [ -z "$APIDOG_TREE_OUTPUT" ]; then
+        APIDOG_TREE_OUTPUT="docs/api-docs/apidog-tree/${ts}.json"
+      fi
+
+      if [ -z "$FOLDER_MAPPING_FILE" ]; then
+        FOLDER_MAPPING_FILE="docs/api-docs/apidog-tree/${ts}.mapping.json"
+      fi
+
+      if [ -z "$FOLDER_DECISION_FILE" ]; then
+        FOLDER_DECISION_FILE="docs/api-docs/apidog-tree/${ts}.decisions.json"
+      fi
+
+      mkdir -p "$(dirname "$APIDOG_TREE_OUTPUT")" "$(dirname "$FOLDER_MAPPING_FILE")" "$(dirname "$FOLDER_DECISION_FILE")"
+
+      if [ -n "$APIDOG_TREE_FILE" ]; then
+        cp "$APIDOG_TREE_FILE" "$APIDOG_TREE_OUTPUT"
+      elif ! fetch_apidog_tree "$APIDOG_TREE_OUTPUT"; then
+        if [ "$ALLOW_ROOT_FOLDER_FALLBACK" = true ]; then
+          echo "警告：無法取得 Apidog API tree，已因 --allow-root-folder-fallback 改用 root folder 0。" >&2
+          jq -n '{exact: [], prefixes: []}' >"$FOLDER_MAPPING_FILE"
+        else
+          fail "無法取得 Apidog API tree；請補 candidate folder_id、提供 --apidog-tree-file，或明確加 --allow-root-folder-fallback"
+        fi
+      fi
+
+      if [ ! -f "$FOLDER_MAPPING_FILE" ] || ! jq -e '.exact? and .prefixes?' "$FOLDER_MAPPING_FILE" >/dev/null 2>&1; then
+        build_apidog_folder_mapping "$APIDOG_TREE_OUTPUT" "$FOLDER_MAPPING_FILE"
+      fi
+
+      resolve_candidate_folder_decisions "$CANDIDATE_FILE" "$FOLDER_MAPPING_FILE" "$ALLOW_ROOT_FOLDER_FALLBACK" "$FOLDER_DECISION_FILE"
+      UNMAPPED_COUNT="$(jq '.unmapped | length' "$FOLDER_DECISION_FILE")"
+      if [ "$UNMAPPED_COUNT" -gt 0 ]; then
+        echo "無法 mapping folder 的 candidates：" >&2
+        jq -r '.unmapped[] | "  - " + (.method | ascii_upcase) + " " + .path' "$FOLDER_DECISION_FILE" >&2
+        fail "存在 ${UNMAPPED_COUNT} 個 unmapped candidates；請在 confirmed JSON 補 folder_id，或明確加 --allow-root-folder-fallback"
+      fi
+
+      jq '.groups' "$FOLDER_DECISION_FILE" >"$FOLDER_BATCHES_FILE"
+      fi
     else
-      rm -f "$DELTA_SPEC_FILE"
-      fail "Delta 過濾失敗：candidate paths 與 local spec 無匹配，上傳中止"
+      DELTA_SPEC_FILE="$(mktemp)"
+      if build_delta_spec "$UPLOAD_SPEC_JSON_FILE" "$CANDIDATE_FILE" "$DELTA_SPEC_FILE"; then
+        mv "$DELTA_SPEC_FILE" "$UPLOAD_SPEC_JSON_FILE"
+      else
+        rm -f "$DELTA_SPEC_FILE"
+        fail "Delta 過濾失敗：candidate paths 與 local spec 無匹配，上傳中止"
+      fi
+      jq -n '[{folder_id: 0, candidates: null}]' >"$FOLDER_BATCHES_FILE"
     fi
+  else
+    jq -n '[{folder_id: 0, candidates: null}]' >"$FOLDER_BATCHES_FILE"
   fi
 else
   guided_progress_emit "upload_apidog" "fetch_remote_openapi" "in_progress" 2 7 "no candidate file, remote compare skipped"
   guided_progress_emit "upload_apidog" "detect_conflicts" "in_progress" 3 7 "conflict detection skipped"
   CONFLICT_COUNT=0
+  jq -n '[{folder_id: 0, candidates: null}]' >"$FOLDER_BATCHES_FILE"
 fi
-
-guided_timing_begin "build_request"
-OPENAPI_SPEC="$(jq -c . "$UPLOAD_SPEC_JSON_FILE")"
-jq -n \
-  --argjson spec "$OPENAPI_SPEC" \
-  '{
-    input: ($spec | tostring),
-    options: {
-      targetEndpointFolderId: 0,
-      targetSchemaFolderId: 0,
-      endpointOverwriteBehavior: "OVERWRITE_EXISTING",
-      schemaOverwriteBehavior: "OVERWRITE_EXISTING",
-      updateFolderOfChangedEndpoint: false,
-      prependBasePath: false
-    }
-  }' >"$TEMP_REQUEST"
-guided_timing_end "upload-apidog" "build_request" "openapi=$OPENAPI_FILE strategy=$CONFLICT_STRATEGY"
-guided_progress_emit "upload_apidog" "build_request" "in_progress" 4 7 "request payload ready"
 
 API_URL="https://api.apidog.com/v1/projects/$APIDOG_PROJECT_ID/import-openapi?locale=en-US"
-guided_timing_begin "upload_request"
-HTTP_CODE="$(curl -s -w "%{http_code}" -o "$TEMP_RESPONSE" \
-  -X POST "$API_URL" \
-  -H "Authorization: Bearer $APIDOG_ACCESS_TOKEN" \
-  -H "X-Apidog-Api-Version: 2024-03-28" \
-  -H "Content-Type: application/json" \
-  -d @"$TEMP_REQUEST")"
-guided_timing_end "upload-apidog" "upload_request" "http_code=$HTTP_CODE"
+IMPORTED_COUNT=0
+UPDATED_COUNT=0
+SKIPPED_COUNT=0
+BATCH_COUNT="$(jq 'length' "$FOLDER_BATCHES_FILE")"
+[ "$BATCH_COUNT" -gt 0 ] || fail "沒有可上傳的 folder batch"
 
-if [ "$HTTP_CODE" -ne 200 ] && [ "$HTTP_CODE" -ne 201 ]; then
-  echo "回應內容：" >&2
-  cat "$TEMP_RESPONSE" >&2
-  fail "無法上傳至 Apidog (HTTP ${HTTP_CODE})"
-fi
+guided_timing_begin "build_request"
+BATCH_INDEX=0
+while IFS= read -r folder_batch; do
+  [ -n "$folder_batch" ] || continue
+  BATCH_INDEX=$((BATCH_INDEX + 1))
 
-RESPONSE="$(cat "$TEMP_RESPONSE")"
-IMPORTED_COUNT="$(echo "$RESPONSE" | jq -r '.data.counters.endpointCreated // .data.imported // .data.created // .imported // 0')"
-UPDATED_COUNT="$(echo "$RESPONSE" | jq -r '.data.counters.endpointUpdated // .data.updated // .data.modified // .updated // .modified // 0')"
-SKIPPED_COUNT="$(echo "$RESPONSE" | jq -r '.data.counters.endpointIgnored // .data.skipped // .skipped // 0')"
+  TARGET_FOLDER_ID="$(echo "$folder_batch" | jq -r '.folder_id')"
+  BATCH_CANDIDATES="$(echo "$folder_batch" | jq -c '.candidates')"
+  BATCH_SPEC_FILE="$(mktemp)"
 
-IMPORTED_COUNT="$(to_int_or_zero "$IMPORTED_COUNT")"
-UPDATED_COUNT="$(to_int_or_zero "$UPDATED_COUNT")"
-SKIPPED_COUNT="$(to_int_or_zero "$SKIPPED_COUNT")"
+  if [ "$BATCH_CANDIDATES" = "null" ]; then
+    cp "$UPLOAD_SPEC_JSON_FILE" "$BATCH_SPEC_FILE"
+    UPDATE_FOLDER_OF_CHANGED_ENDPOINT=false
+  else
+    if ! build_subset_spec_from_candidates_json "$UPLOAD_SPEC_JSON_FILE" "$BATCH_CANDIDATES" "$BATCH_SPEC_FILE"; then
+      rm -f "$BATCH_SPEC_FILE"
+      fail "Folder batch ${TARGET_FOLDER_ID} 的 delta payload 產生失敗"
+    fi
+    UPDATE_FOLDER_OF_CHANGED_ENDPOINT=true
+  fi
+
+  OPENAPI_SPEC="$(jq -c . "$BATCH_SPEC_FILE")"
+  jq -n \
+    --argjson spec "$OPENAPI_SPEC" \
+    --argjson target_folder_id "$TARGET_FOLDER_ID" \
+    --argjson update_folder "$UPDATE_FOLDER_OF_CHANGED_ENDPOINT" \
+    '{
+      input: ($spec | tostring),
+      options: {
+        targetEndpointFolderId: $target_folder_id,
+        targetSchemaFolderId: 0,
+        endpointOverwriteBehavior: "OVERWRITE_EXISTING",
+        schemaOverwriteBehavior: "OVERWRITE_EXISTING",
+        updateFolderOfChangedEndpoint: $update_folder,
+        prependBasePath: false
+      }
+    }' >"$TEMP_REQUEST"
+
+  if [ "$BATCH_INDEX" -eq 1 ]; then
+    guided_timing_end "upload-apidog" "build_request" "openapi=$OPENAPI_FILE strategy=$CONFLICT_STRATEGY batches=$BATCH_COUNT"
+    guided_progress_emit "upload_apidog" "build_request" "in_progress" 4 7 "request payload ready"
+    guided_timing_begin "upload_request"
+  fi
+
+  echo "上傳 folder batch ${BATCH_INDEX}/${BATCH_COUNT}（targetEndpointFolderId=${TARGET_FOLDER_ID}）..." >&2
+  HTTP_CODE="$(curl -s -w "%{http_code}" -o "$TEMP_RESPONSE" \
+    -X POST "$API_URL" \
+    -H "Authorization: Bearer $APIDOG_ACCESS_TOKEN" \
+    -H "X-Apidog-Api-Version: 2024-03-28" \
+    -H "Content-Type: application/json" \
+    -d @"$TEMP_REQUEST")"
+
+  rm -f "$BATCH_SPEC_FILE"
+
+  if [ "$HTTP_CODE" -ne 200 ] && [ "$HTTP_CODE" -ne 201 ]; then
+    echo "回應內容：" >&2
+    cat "$TEMP_RESPONSE" >&2
+    fail "無法上傳至 Apidog (HTTP ${HTTP_CODE})"
+  fi
+
+  RESPONSE="$(cat "$TEMP_RESPONSE")"
+  BATCH_IMPORTED_COUNT="$(echo "$RESPONSE" | jq -r '.data.counters.endpointCreated // .data.imported // .data.created // .imported // 0')"
+  BATCH_UPDATED_COUNT="$(echo "$RESPONSE" | jq -r '.data.counters.endpointUpdated // .data.updated // .data.modified // .updated // .modified // 0')"
+  BATCH_SKIPPED_COUNT="$(echo "$RESPONSE" | jq -r '.data.counters.endpointIgnored // .data.skipped // .skipped // 0')"
+
+  IMPORTED_COUNT=$((IMPORTED_COUNT + $(to_int_or_zero "$BATCH_IMPORTED_COUNT")))
+  UPDATED_COUNT=$((UPDATED_COUNT + $(to_int_or_zero "$BATCH_UPDATED_COUNT")))
+  SKIPPED_COUNT=$((SKIPPED_COUNT + $(to_int_or_zero "$BATCH_SKIPPED_COUNT")))
+done < <(jq -cr '.[]' "$FOLDER_BATCHES_FILE")
+
+guided_timing_end "upload-apidog" "upload_request" "batches=$BATCH_COUNT"
 
 SYNCED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 [ -n "$TO_TIME" ] || TO_TIME="$SYNCED_AT"
@@ -878,6 +1270,9 @@ jq -n \
   --arg candidate_file "$CANDIDATE_FILE" \
   --arg review_file "$REVIEW_FILE" \
   --arg review_decision_file "$REVIEW_DECISION_FILE" \
+  --arg apidog_tree_file "$APIDOG_TREE_OUTPUT" \
+  --arg folder_mapping_file "$FOLDER_MAPPING_FILE" \
+  --arg folder_decision_file "$FOLDER_DECISION_FILE" \
   --arg conflict_file "$(if [ "$CONFLICT_COUNT" -gt 0 ]; then echo "$CONFLICT_FILE"; fi)" \
   --arg conflict_strategy "$CONFLICT_STRATEGY" \
   --argjson imported_count "$IMPORTED_COUNT" \
@@ -893,6 +1288,9 @@ jq -n \
     candidate_file: (if $candidate_file == "" then null else $candidate_file end),
     review_file: (if $review_file == "" then null else $review_file end),
     review_decision_file: (if $review_decision_file == "" then null else $review_decision_file end),
+    apidog_tree_file: (if $apidog_tree_file == "" then null else $apidog_tree_file end),
+    folder_mapping_file: (if $folder_mapping_file == "" then null else $folder_mapping_file end),
+    folder_decision_file: (if $folder_decision_file == "" then null else $folder_decision_file end),
     conflict_file: (if $conflict_file == "" then null else $conflict_file end),
     conflict_strategy: $conflict_strategy,
     imported_count: $imported_count,

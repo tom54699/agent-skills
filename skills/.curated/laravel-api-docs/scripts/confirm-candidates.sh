@@ -111,7 +111,14 @@ NORMALIZED_CANDIDATES="$(
     | map({
         status: ((.status // "") | ascii_downcase),
         method: ((.method // "") | ascii_upcase),
-        path: (.path // "")
+        path: (.path // ""),
+        folder_id: (
+          if has("folder_id") and (.folder_id != null) and ((.folder_id | tostring) | test("^[0-9]+$")) then
+            (.folder_id | tonumber)
+          else
+            null
+          end
+        )
       })
     | map(select(
         (.status == "new" or .status == "updated" or .status == "deleted")
@@ -119,6 +126,7 @@ NORMALIZED_CANDIDATES="$(
         and (.path | length > 0)
       ))
     | unique_by(.status, .method, .path)
+    | map(if .folder_id == null then del(.folder_id) else . end)
     | sort_by(.path, .method, .status)
   '
 )"

@@ -31,6 +31,9 @@ description: 以 guided-sync 流程自動同步 Laravel API 文件。流程為�
 - `docs/api-docs/conflicts/<timestamp>.json`：衝突清單
 - `docs/api-docs/reviews/openapi-review.<timestamp>.json`：OpenAPI unresolved review 清單
 - `docs/api-docs/reviews/<timestamp>.approved.json`：review decision 清單
+- `docs/api-docs/apidog-tree/<timestamp>.json`：本次 Apidog API tree discovery 原始回應
+- `docs/api-docs/apidog-tree/<timestamp>.mapping.json`：由 API tree 解析出的 endpoint / prefix -> folderId mapping
+- `docs/api-docs/apidog-tree/<timestamp>.decisions.json`：confirmed candidates 的 folderId 決策結果與 unmapped 清單
 
 ## 輸入與輸出
 
@@ -74,6 +77,7 @@ description: 以 guided-sync 流程自動同步 Laravel API 文件。流程為�
 - `docs/api-docs/candidates/`
 - `docs/api-docs/conflicts/`
 - `docs/api-docs/reviews/`
+- `docs/api-docs/apidog-tree/`
 - `docs/api-docs/redoc/`
 - `docs/api-docs/versions/`
 7. `preflight.sh` 必須檢查 `jq`、`yq`、`php` 等必要工具。
@@ -192,7 +196,8 @@ description: 以 guided-sync 流程自動同步 Laravel API 文件。流程為�
 - `status`
 - `method`
 - `path`
-9. 將確認後的清單落成 `docs/api-docs/candidates/<timestamp>.confirmed.json`。
+9. confirmed JSON 可額外包含每筆 candidate 的 `folder_id`。若存在，Step 7 folder-aware upload 必須優先使用該值，覆寫自動 mapping。
+10. 將確認後的清單落成 `docs/api-docs/candidates/<timestamp>.confirmed.json`。
 
 ### Step 6：依最終清單更新 OpenAPI
 
@@ -278,28 +283,42 @@ description: 以 guided-sync 流程自動同步 Laravel API 文件。流程為�
 15. post-upload verification 失敗時，整次同步必須視為失敗，不得寫 success history。
 16. 若提供 `--review-file` 且 review item count 大於 0，Step 7 必須同時提供 `--review-decision-file`，否則 upload 必須在任何遠端請求前就中止。
 17. review decision artifact 必須對應同一份 review artifact，且所有 unresolved item 都要被明確 accept，upload 才可繼續。
+18. delta 模式且提供 confirmed candidate file 時，Step 7 預設啟用 folder-aware upload：
+- upload 前呼叫 `GET https://api.apidog.com/api/v1/projects/{projectId}/api-tree-list`
+- request 必須帶 `Authorization: Bearer <token>` 與 `X-Apidog-Api-Version: 2024-03-28`
+- 解析 `apiDetailFolder.<id>` 與 `apiDetail.api.folderId` 建立 mapping
+- folderId 決策順序為：candidate `folder_id`、相同 method/path、longest path prefix、明確 root fallback
+- 無法 mapping 的 candidates 必須列出；未明確加 `--allow-root-folder-fallback` 前不得靜默丟到 root folder `0`
+19. folder-aware delta upload 必須依 resolved folderId 分批 import。每批 payload 只包含該 folder 的 confirmed `new` / `updated` endpoints，且 import request 必須設定：
+- `options.targetEndpointFolderId`
+- `options.updateFolderOfChangedEndpoint: true`
+20. `--no-delta` 或未提供 `--candidate-file` 時，不套用 folder-aware grouping，維持既有 full upload 行為。
+21. `api-tree-list` 必須使用 `/api/v1/` 前綴；若收到 redirect 或 permission error，需明確回報原因。若使用者已確認 fallback，可用 `--allow-root-folder-fallback` 將 unmapped candidates 放到 root folder `0`。
 
 ### Step 8：詢問是否產生 Redoc HTML
 
 1. 在 Step 7 完成後詢問使用者是否需要產生 HTML 文件。
-2. 若使用者選擇「要」，應以使用者語言詢問是否要在 HTML 頁面加入補充說明，例如：
+2. 若使用者選擇「要」，必須先詢問 Redoc 輸出範圍：
+- `changed-only`：只產生本次 confirmed `new` / `updated` endpoints
+- `full`：使用完整 `docs/api-docs/openapi.yaml`
+3. 若使用者選擇「要」，應以使用者語言詢問是否要在 HTML 頁面加入補充說明，例如：
 - 文件使用說明
 - 認證方式
 - 測試環境 / Base URL
 - 對接注意事項
-3. 不應直接先用 `extra.md` 當成主提問詞；`extra.md` 是內部實作檔案，不是主要使用者概念。
-4. 若使用者選擇不要補充內容，流程再以純 HTML 繼續。
-5. 若使用者選擇要補充內容，LLM 必須先與使用者討論內容，並起草 `docs/api-docs/redoc/extra.md`。
-6. 未完成 `extra.md` 起草前，不得直接執行 `gen-html.sh --with-extra`。
-7. 若使用者選擇「否」，流程直接結束。
-8. 若存在 unresolved review artifact 且尚未完成 review decision，禁止跳過 Step 7 直接進 Step 9。
+4. 不應直接先用 `extra.md` 當成主提問詞；`extra.md` 是內部實作檔案，不是主要使用者概念。
+5. 若使用者選擇不要補充內容，流程再以純 HTML 繼續。
+6. 若使用者選擇要補充內容，LLM 必須先與使用者討論內容，並起草 `docs/api-docs/redoc/extra.md`。
+7. 未完成 `extra.md` 起草前，不得直接執行 `gen-html.sh --with-extra`。
+8. 若使用者選擇「否」，流程直接結束。
+9. 若存在 unresolved review artifact 且尚未完成 review decision，禁止跳過 Step 7 直接進 Step 9。
 
-### Step 9：產生 Redoc HTML（同一份 OpenAPI）
+### Step 9：產生 Redoc HTML
 
-1. 以 `docs/api-docs/openapi.yaml` 固定產出多頁 HTML，並維持最新版固定入口：
+1. 若 Step 8 選擇 `full`，以 `docs/api-docs/openapi.yaml` 固定產出多頁 HTML，並維持最新版固定入口：
 - `docs/api-docs/redoc/index.html`
 - `docs/api-docs/redoc/api-docs.html`
-2. 每次正式 HTML 生成都必須額外建立版本快照：
+2. 每次正式 full HTML 生成都必須額外建立版本快照：
 - `docs/api-docs/versions/<version-id>/openapi.yaml`
 - `docs/api-docs/versions/<version-id>/redoc/index.html`
 - `docs/api-docs/versions/<version-id>/redoc/api-docs.html`
@@ -315,6 +334,10 @@ description: 以 guided-sync 流程自動同步 Laravel API 文件。流程為�
 11. 僅在使用者已明確選擇純 HTML 時，才能執行不帶額外內容的生成。
 12. 即使沒有補充內容，`index.html` 仍應被產出為固定首頁，提供一致的分享入口與導覽。
 13. 若使用自訂 `--output` 產生臨時 HTML，該輸出不建立 `docs/api-docs/versions/` 正式版本快照。
+14. 若 Step 8 選擇 `changed-only`，必須先產生 subset OpenAPI：
+- `bash "$SKILL_DIR/gen-subset-openapi.sh" --openapi docs/api-docs/openapi.yaml --candidate-file docs/api-docs/candidates/<timestamp>.confirmed.json --output docs/api-docs/versions/<version-id>/subset-openapi.json`
+15. changed-only Redoc 必須以 subset OpenAPI 呼叫 `gen-html.sh --openapi <subset>`，預設輸出到 `docs/api-docs/versions/<version-id>/subset-redoc/api-docs.html`，不得覆蓋 `docs/api-docs/redoc/index.html` 或 `docs/api-docs/redoc/api-docs.html`，除非使用者明確確認替換正式入口。
+16. changed-only subset 只包含 confirmed `new` / `updated` endpoints；`deleted` candidates 不進 subset Redoc。
 
 ## 同步歷史紀錄規格
 

@@ -25,6 +25,9 @@
 - `docs/api-docs/conflicts/<timestamp>.json`
 - `docs/api-docs/reviews/openapi-review.<timestamp>.json`
 - `docs/api-docs/reviews/<timestamp>.approved.json`
+- `docs/api-docs/apidog-tree/<timestamp>.json`
+- `docs/api-docs/apidog-tree/<timestamp>.mapping.json`
+- `docs/api-docs/apidog-tree/<timestamp>.decisions.json`
 - `docs/api-docs/redoc/index.html`
 - `docs/api-docs/redoc/api-docs.html`
 - `docs/api-docs/versions/<version-id>/openapi.yaml`
@@ -224,6 +227,8 @@ LLM 必須先與使用者確認候選清單，再進入 OpenAPI 更新。
 確認完成後，才可產生：
 - `docs/api-docs/candidates/<timestamp>.confirmed.json`
 
+confirmed candidate 可額外帶 `folder_id`。此欄位用於 Apidog folder-aware upload，優先於 API tree 自動 mapping。
+
 未確認前不得修改 `docs/api-docs/openapi.yaml`。
 
 ## 7. OpenAPI Merge 階段
@@ -252,6 +257,7 @@ Apidog sync 只吃本地 `docs/api-docs/openapi.yaml`。
 
 流程要點：
 - upload 前先處理 confirmed `updated` 的 conflict compare
+- delta upload 預設依 Apidog folder mapping 分批送出
 - upload 後重新 export 遠端 OpenAPI 驗證結果
 - 只有遠端驗證通過，才可 append success history
 
@@ -259,9 +265,41 @@ Apidog sync 只吃本地 `docs/api-docs/openapi.yaml`。
 - 對 confirmed `updated` 而言，代表遠端目前沒有對應 operation
 - 這屬於 non-blocking，不應被 `keep_remote` 擋掉
 
+### Folder-aware delta upload
+
+當提供 confirmed candidate file 且未使用 `--no-delta` 時，upload 預設啟用 folder-aware 行為。
+
+API tree discovery：
+- endpoint：`GET https://api.apidog.com/api/v1/projects/{projectId}/api-tree-list`
+- headers：`Authorization: Bearer <token>`、`X-Apidog-Api-Version: 2024-03-28`
+- 注意：這支 API 必須使用 `/api/v1/` 前綴；若誤用 `/v1/` 可能導向文件頁，不能視為空 tree
+
+本次 discovery 與解析結果會寫到：
+- `docs/api-docs/apidog-tree/<timestamp>.json`
+- `docs/api-docs/apidog-tree/<timestamp>.mapping.json`
+- `docs/api-docs/apidog-tree/<timestamp>.decisions.json`
+
+folderId 決策順序：
+1. confirmed candidate 內的 `folder_id`
+2. API tree 中相同 method + path 的既有 `api.folderId`
+3. API tree 中 longest path prefix 對應的 folderId
+4. 明確允許後使用 root folder `0`
+
+若 candidate 無法 mapping，流程必須列出 unmapped 清單並中止。只有使用者明確確認 fallback，或命令明確加上 `--allow-root-folder-fallback`，才可把 unmapped candidates 放到 root folder `0`。
+
+folder-aware upload 會依 resolved folderId 分組。每個 folder group 產生一個 import request，payload 只包含該 folder group 的 confirmed `new` / `updated` endpoints，並設定：
+- `options.targetEndpointFolderId`
+- `options.updateFolderOfChangedEndpoint: true`
+
+所有 batches 都成功上傳，且 post-upload verification 確認所有 confirmed `new` / `updated` endpoints 存在後，才會 append 一筆 success history。任一 batch 或 verification 失敗，整次 sync 視為失敗，不寫 success history。
+
+`--no-delta` 或未提供 `--candidate-file` 時，不套用 folder grouping，維持 full upload 行為。
+
 ## 9. HTML 產生
 
-Redoc HTML 必須在 Apidog sync 完成後才決定是否產生。
+Redoc HTML 必須在 Apidog sync 完成後才決定是否產生。使用者選擇產生 HTML 時，需先確認輸出範圍：
+- changed-only：只輸出本次 confirmed `new` / `updated` endpoints
+- full：輸出完整 `docs/api-docs/openapi.yaml`
 
 若使用者需要補充文字內容：
 - 先討論內容
@@ -270,7 +308,7 @@ Redoc HTML 必須在 Apidog sync 完成後才決定是否產生。
 
 HTML 額外內容不得回寫到 `openapi.yaml`。
 
-正式 HTML 生成時，`docs/api-docs/redoc/` 仍是最新版固定入口；同一次輸出也會建立 `docs/api-docs/versions/<version-id>/` 作為備份。
+full HTML 生成時，`docs/api-docs/redoc/` 仍是最新版固定入口；同一次輸出也會建立 `docs/api-docs/versions/<version-id>/` 作為備份。
 
 版本資料夾內容：
 - `openapi.yaml`：本次生成 HTML 時使用的 OpenAPI 快照
@@ -278,6 +316,29 @@ HTML 額外內容不得回寫到 `openapi.yaml`。
 - `redoc/api-docs.html`：本次純 Redoc 快照
 
 `<version-id>` 使用本機時間 `YYYYMMDD-HHMMSS`；若同一秒重跑造成路徑已存在，會自動加遞增後綴避免覆蓋。若使用自訂 `--output` 產生臨時 HTML，則不建立正式版本快照。
+
+changed-only HTML 生成時，流程先由完整 OpenAPI 與 confirmed candidate file 產生 subset：
+
+```bash
+bash "$SKILL_DIR/gen-subset-openapi.sh" \
+  --openapi docs/api-docs/openapi.yaml \
+  --candidate-file docs/api-docs/candidates/<timestamp>.confirmed.json \
+  --output docs/api-docs/versions/<version-id>/subset-openapi.json
+```
+
+再將 subset 傳給 `gen-html.sh`：
+
+```bash
+bash "$SKILL_DIR/gen-html.sh" \
+  --openapi docs/api-docs/versions/<version-id>/subset-openapi.json \
+  --output docs/api-docs/versions/<version-id>/subset-redoc/api-docs.html
+```
+
+changed-only Redoc 預設不得覆蓋：
+- `docs/api-docs/redoc/index.html`
+- `docs/api-docs/redoc/api-docs.html`
+
+subset 只包含 confirmed `new` / `updated` endpoints，`deleted` candidates 不會出現在 changed-only Redoc。
 
 ## 10. 常見異常與判讀方式
 

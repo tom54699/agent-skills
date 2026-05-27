@@ -47,7 +47,10 @@ cat > "$FULL_SPEC" <<'JSON'
   "components": { "schemas": { "Error": { "type": "object" } } },
   "tags": [{ "name": "Users" }, { "name": "Orders" }],
   "paths": {
-    "/users":       { "get": { "summary": "List users",   "tags": ["Users"] } },
+    "/users":       {
+      "get":  { "summary": "List users",   "tags": ["Users"] },
+      "post": { "summary": "Create user",  "tags": ["Users"] }
+    },
     "/users/{id}":  { "get": { "summary": "Get user",     "tags": ["Users"] } },
     "/orders":      { "get": { "summary": "List orders",  "tags": ["Orders"] } },
     "/orders/{id}": { "put": { "summary": "Update order", "tags": ["Orders"] } },
@@ -144,6 +147,11 @@ has_info=$(jq 'has("info")' "$OUT1")
   && pass "Test 4: delta 保留 info / servers / components 共用節點" \
   || fail_test "Test 4: info=$has_info servers=$has_servers components=$has_components"
 
+has_user_post=$(jq '.paths["/users"] | has("post")' "$OUT1")
+[ "$has_user_post" = "false" ] \
+  && pass "Test 4.1: delta 只保留 candidate method，不帶入同 path 其他 method" \
+  || fail_test "Test 4.1: /users post 不應出現在 delta"
+
 # deleted-only → fallback 全量
 OUT5="$TMPDIR_TEST/out5.json"
 build_delta_spec "$FULL_SPEC" "$CANDIDATE_DELETED_ONLY" "$OUT5" 2>/dev/null
@@ -159,6 +167,126 @@ if build_delta_spec "$FULL_SPEC" "$CANDIDATE_MISMATCH" "$OUT6" 2>/dev/null; then
 else
   pass "Test 6: path mismatch → 正確回傳非 0（阻擋上傳）"
 fi
+
+# ── folder-aware mapping ─────────────────────────────────────────────────────
+echo ""
+echo "═══════════════════════════════════════"
+echo " folder-aware mapping 測試"
+echo "═══════════════════════════════════════"
+
+APIDOG_TREE="$TMPDIR_TEST/apidog_tree.json"
+cat > "$APIDOG_TREE" <<'JSON'
+{
+  "success": true,
+  "data": [
+    {
+      "type": "apiDetailFolder",
+      "key": "apiDetailFolder.1417834",
+      "children": [
+        {
+          "type": "apiDetail",
+          "api": { "method": "GET", "path": "/api/admin/users", "folderId": 1417834 }
+        },
+        {
+          "type": "apiDetail",
+          "api": { "method": "POST", "path": "/api/admin/orders" }
+        }
+      ]
+    },
+    {
+      "type": "apiDetailFolder",
+      "key": "folder_without_numeric_id",
+      "children": [
+        {
+          "type": "apiDetail",
+          "api": { "method": "GET", "path": "/api/skipped/no-folder" }
+        }
+      ]
+    }
+  ]
+}
+JSON
+
+FOLDER_MAPPING="$TMPDIR_TEST/folder_mapping.json"
+build_apidog_folder_mapping "$APIDOG_TREE" "$FOLDER_MAPPING"
+
+exact_user_folder=$(jq -r '.exact[] | select(.method == "get" and .path == "/api/admin/users") | .folder_id' "$FOLDER_MAPPING")
+[ "$exact_user_folder" = "1417834" ] \
+  && pass "Test 12: apiDetail exact mapping 解析 folderId" \
+  || fail_test "Test 12: exact folderId 期待 1417834，得到 $exact_user_folder"
+
+inherited_order_folder=$(jq -r '.exact[] | select(.method == "post" and .path == "/api/admin/orders") | .folder_id' "$FOLDER_MAPPING")
+[ "$inherited_order_folder" = "1417834" ] \
+  && pass "Test 13: apiDetailFolder numeric key 可供 child API 繼承 folderId" \
+  || fail_test "Test 13: inherited folderId 期待 1417834，得到 $inherited_order_folder"
+
+skipped_bad_folder=$(jq '[.exact[] | select(.path == "/api/skipped/no-folder")] | length' "$FOLDER_MAPPING")
+[ "$skipped_bad_folder" -eq 0 ] \
+  && pass "Test 14: 無 numeric suffix 的 folder key 不推導 folderId" \
+  || fail_test "Test 14: 無效 folder key 不應產生 mapping"
+
+CANDIDATE_FOLDER="$TMPDIR_TEST/candidates_folder.json"
+cat > "$CANDIDATE_FOLDER" <<'JSON'
+{
+  "candidates": [
+    { "status": "updated", "method": "GET", "path": "/api/admin/users" },
+    { "status": "new", "method": "GET", "path": "/api/admin/users/export" },
+    { "status": "new", "method": "POST", "path": "/api/admin/invoices", "folder_id": 1417999 },
+    { "status": "new", "method": "GET", "path": "/api/unknown" },
+    { "status": "deleted", "method": "DELETE", "path": "/api/admin/users/{id}" }
+  ]
+}
+JSON
+
+FOLDER_DECISIONS="$TMPDIR_TEST/folder_decisions.json"
+resolve_candidate_folder_decisions "$CANDIDATE_FOLDER" "$FOLDER_MAPPING" false "$FOLDER_DECISIONS"
+
+unmapped_count=$(jq '.unmapped | length' "$FOLDER_DECISIONS")
+[ "$unmapped_count" -eq 1 ] \
+  && pass "Test 15: unmapped candidate 會被列出且不靜默 root fallback" \
+  || fail_test "Test 15: unmapped_count 期待 1，得到 $unmapped_count"
+
+explicit_folder=$(jq -r '.decisions[] | select(.path == "/api/admin/invoices") | .resolved_folder_id' "$FOLDER_DECISIONS")
+explicit_source=$(jq -r '.decisions[] | select(.path == "/api/admin/invoices") | .folder_source' "$FOLDER_DECISIONS")
+[ "$explicit_folder" = "1417999" ] && [ "$explicit_source" = "candidate.folder_id" ] \
+  && pass "Test 16: candidate folder_id override 優先" \
+  || fail_test "Test 16: explicit folder=$explicit_folder source=$explicit_source"
+
+prefix_folder=$(jq -r '.decisions[] | select(.path == "/api/admin/users/export") | .resolved_folder_id' "$FOLDER_DECISIONS")
+prefix_source=$(jq -r '.decisions[] | select(.path == "/api/admin/users/export") | .folder_source' "$FOLDER_DECISIONS")
+[ "$prefix_folder" = "1417834" ] && [ "$prefix_source" = "api_tree_prefix" ] \
+  && pass "Test 17: 新 endpoint 可用 longest-prefix mapping" \
+  || fail_test "Test 17: prefix folder=$prefix_folder source=$prefix_source"
+
+FOLDER_DECISIONS_ROOT="$TMPDIR_TEST/folder_decisions_root.json"
+resolve_candidate_folder_decisions "$CANDIDATE_FOLDER" "$FOLDER_MAPPING" true "$FOLDER_DECISIONS_ROOT"
+root_source=$(jq -r '.decisions[] | select(.path == "/api/unknown") | .folder_source' "$FOLDER_DECISIONS_ROOT")
+root_folder=$(jq -r '.decisions[] | select(.path == "/api/unknown") | .resolved_folder_id' "$FOLDER_DECISIONS_ROOT")
+[ "$root_folder" = "0" ] && [ "$root_source" = "root_fallback" ] \
+  && pass "Test 18: 明確允許時才使用 root fallback" \
+  || fail_test "Test 18: root folder=$root_folder source=$root_source"
+
+FULL_FOLDER_SPEC="$TMPDIR_TEST/full_folder.json"
+cat > "$FULL_FOLDER_SPEC" <<'JSON'
+{
+  "openapi": "3.1.0",
+  "info": { "title": "Folder API", "version": "1.0.0" },
+  "paths": {
+    "/api/admin/users": { "get": { "summary": "List admin users" } },
+    "/api/admin/users/export": { "get": { "summary": "Export admin users" } },
+    "/api/admin/invoices": { "post": { "summary": "Create invoice" } },
+    "/api/unknown": { "get": { "summary": "Unknown" } }
+  }
+}
+JSON
+
+GROUP_1417834="$(jq -c '.groups[] | select(.folder_id == 1417834) | .candidates' "$FOLDER_DECISIONS_ROOT")"
+OUT_FOLDER_BATCH="$TMPDIR_TEST/out_folder_batch.json"
+build_subset_spec_from_candidates_json "$FULL_FOLDER_SPEC" "$GROUP_1417834" "$OUT_FOLDER_BATCH" 2>/dev/null
+batch_paths=$(jq -r '(.paths | keys) | join(",")' "$OUT_FOLDER_BATCH")
+[ "$batch_paths" = "/api/admin/users,/api/admin/users/export" ] \
+  && pass "Test 19: folder batch payload 只包含該 folder candidates" \
+  || fail_test "Test 19: batch paths=$batch_paths"
 
 # ── check_path_strategy_alignment ────────────────────────────────────────────
 echo ""
@@ -180,7 +308,11 @@ fi
 # 策略不一致
 PATH_STRATEGY="strip-api-prefix-to-server"
 SKIP_ALIGNMENT_CHECK=false
-if check_path_strategy_alignment "$REMOTE_KEEP_FULL" 2>/dev/null; then
+set +e
+(check_path_strategy_alignment "$REMOTE_KEEP_FULL" 2>/dev/null)
+alignment_status=$?
+set -uo pipefail
+if [ "$alignment_status" -eq 0 ]; then
   fail_test "Test 8: 策略不一致應阻擋，但通過了"
 else
   pass "Test 8: 策略不一致（strip vs keep-full）→ 正確阻擋"
