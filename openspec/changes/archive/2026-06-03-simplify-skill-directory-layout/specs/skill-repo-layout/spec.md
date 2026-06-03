@@ -1,8 +1,5 @@
-# skill-repo-layout Specification
+## MODIFIED Requirements
 
-## Purpose
-定義這個 repo 作為多 skill collection 時的目錄與安裝文件契約，確保 project skills 使用直接、容易尋找的路徑。
-## Requirements
 ### Requirement: Project skills use direct paths
 The repository MUST store active project skills directly under `skills/<skill-name>/` instead of requiring curated or experimental subdirectories.
 

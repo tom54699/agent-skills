@@ -1,6 +1,6 @@
 # Laravel API Docs Guided-Sync 流程說明
 
-這份文件整理 `skills/.curated/laravel-api-docs` 目前最完整的 guided-sync 執行流程，目的不是介紹單一腳本，而是說清楚整條鏈路的責任邊界、輸入輸出與排錯方式。
+這份文件整理 `skills/laravel-api-docs` 目前最完整的 guided-sync 執行流程，目的不是介紹單一腳本，而是說清楚整條鏈路的責任邊界、輸入輸出與排錯方式。
 
 適用情境：
 - Laravel 專案日常同步 API 文件

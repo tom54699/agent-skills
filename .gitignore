@@ -14,3 +14,14 @@ AGENTS.md
 .env
 .env.*
 !.env.example
+
+.understand-anything/*
+!.understand-anything/
+!.understand-anything/.understandignore
+!.understand-anything/config.json
+
+.ai-project-index/*
+!.ai-project-index/
+!.ai-project-index/config.json
+
+docs/generated/*

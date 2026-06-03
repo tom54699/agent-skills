@@ -235,7 +235,7 @@ function decodeYamlFile(string $repo, string $file): array
 
 function runGenerator(string $repo, string $pathStrategy): array
 {
-    $script = '/Users/athena/Documents/workSpace/私人/Agent-Skills/skills/.curated/laravel-api-docs/bin/gen-openapi.php';
+    $script = '/Users/athena/Documents/workSpace/私人/Agent-Skills/skills/laravel-api-docs/bin/gen-openapi.php';
     $stdout = mustRun(['php', '-n', $script, '--path-strategy', $pathStrategy, '--no-progress'], $repo);
 
     return json_decode($stdout, true, flags: JSON_THROW_ON_ERROR);

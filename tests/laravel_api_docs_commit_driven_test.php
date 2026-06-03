@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-require __DIR__ . '/../skills/.curated/laravel-api-docs/src/InferCandidates/bootstrap.php';
+require __DIR__ . '/../skills/laravel-api-docs/src/InferCandidates/bootstrap.php';
 
 use LaravelApiDocs\InferCandidates\Analyzer;
 use LaravelApiDocs\InferCandidates\AnalyzerOptions;

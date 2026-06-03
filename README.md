@@ -1,11 +1,10 @@
 # Agent Skills
 
-這個 repo 用來集中管理多個 agent skill 與其 OpenSpec 變更紀錄，結構上區分穩定可安裝與實驗中 skill，方便後續持續擴充。
+這個 repo 用來集中管理多個 agent skill 與其 OpenSpec 變更紀錄。所有專案 skill 直接放在 `skills/<skill-name>/`，避免用資料夾名稱區分成熟度造成路徑噪音。
 
 ## Repo 結構
 
-- `skills/.curated/`：穩定、可推薦安裝的 skill
-- `skills/.experimental/`：仍在驗證、可能調整契約的 skill
+- `skills/<skill-name>/`：專案 skill
 - `openspec/`：需求、設計、spec、tasks 紀錄
 - `docs/`：repo 級文件與安裝說明
 
@@ -47,11 +46,11 @@ npx skills update laravel-api-docs -p
 
 完整安裝說明見 [docs/install-skills.md](docs/install-skills.md)，公開發佈整理見 [docs/publish-skills.md](docs/publish-skills.md)。
 
-## Curated Skills
+## Skills
 
 ### `laravel-api-docs`
 
-位置：`skills/.curated/laravel-api-docs`
+位置：`skills/laravel-api-docs`
 
 用來跑 Laravel API 文件 guided-sync。流程大致會：
 
@@ -62,8 +61,8 @@ npx skills update laravel-api-docs -p
 - 同步到 Apidog，必要時處理 review 與衝突
 - 最後產生多頁 HTML 文件
 
-## Experimental Skills
+### `ai-project-index`
 
-目前保留 `skills/.experimental/` 結構，之後新增仍在探索中的 skill 時使用。
+位置：`skills/ai-project-index`
 
-若某個 experimental skill 不想被一般安裝流程列出，請在該 skill 的 `SKILL.md` frontmatter 補上 `metadata.internal: true`。
+產生、查詢與稽核給 AI 使用的輕量專案索引。索引只作為 source/spec/docs/tests 的 routing aid，不是 source of truth。

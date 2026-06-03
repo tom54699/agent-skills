@@ -1,0 +1,24 @@
+{
+  "includePaths": [
+    "AGENTS.md",
+    ".codex/skills/openspec-*/SKILL.md"
+  ],
+  "excludePaths": [
+    "docs/generated/**"
+  ],
+  "expectedCoverage": [
+    "skills/laravel-api-docs/SKILL.md",
+    "skills/laravel-api-docs/bin/infer-candidates.php",
+    "skills/laravel-api-docs/bin/gen-openapi.php",
+    "skills/laravel-api-docs/src/InferCandidates/Analyzer.php",
+    "skills/laravel-api-docs/src/OpenApiGenerator/OpenApiGenerator.php",
+    "skills/ai-project-index/SKILL.md",
+    "skills/ai-project-index/scripts/*.py",
+    "openspec/specs/*.md",
+    "docs/*.md",
+    "tests/*.php",
+    ".codex/skills/openspec-*/SKILL.md",
+    "AGENTS.md",
+    "CLAUDE.md"
+  ]
+}

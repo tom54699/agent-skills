@@ -16,14 +16,14 @@
 ```
 Agent-Skills/
 ├── skills/
-│   └── .curated/
-│       └── laravel-api-docs/     # Laravel API 文件同步 skill（主要業務邏輯）
-│           ├── SKILL.md          # ★ Skill 規格入口，閱讀順序第一
-│           ├── bin/              # PHP 執行入口（infer-candidates.php, gen-openapi.php）
-│           ├── src/              # PHP 分析器 / 生成器原始碼
-│           │   ├── InferCandidates/   # 候選 API 推測模組
-│           │   └── OpenApiGenerator/  # OpenAPI 生成模組
-│           └── scripts/          # Shell 腳本（progress-lib.sh 等）
+│   ├── laravel-api-docs/         # Laravel API 文件同步 skill（主要業務邏輯）
+│   │   ├── SKILL.md              # ★ Skill 規格入口，閱讀順序第一
+│   │   ├── bin/                  # PHP 執行入口（infer-candidates.php, gen-openapi.php）
+│   │   ├── src/                  # PHP 分析器 / 生成器原始碼
+│   │   │   ├── InferCandidates/  # 候選 API 推測模組
+│   │   │   └── OpenApiGenerator/ # OpenAPI 生成模組
+│   │   └── scripts/              # Shell 腳本（progress-lib.sh 等）
+│   └── ai-project-index/         # AI 專案索引 skill
 │
 ├── .codex/skills/                # OpenSpec workflow skills（流程控制）
 │   ├── openspec-explore/         # 探索模式：思考問題，不實作
@@ -49,11 +49,11 @@ Agent-Skills/
 
 | 順序 | 檔案 | 說明 |
 |------|------|------|
-| 1 | [skills/.curated/laravel-api-docs/SKILL.md](skills/.curated/laravel-api-docs/SKILL.md) | Skill 規格全文，包含完整流程（Step 1–9） |
-| 2 | [skills/.curated/laravel-api-docs/bin/infer-candidates.php](skills/.curated/laravel-api-docs/bin/infer-candidates.php) | 候選推測執行入口 |
-| 3 | [skills/.curated/laravel-api-docs/bin/gen-openapi.php](skills/.curated/laravel-api-docs/bin/gen-openapi.php) | OpenAPI 生成執行入口 |
-| 4 | `skills/.curated/laravel-api-docs/src/InferCandidates/` | 候選推測模組實作 |
-| 5 | `skills/.curated/laravel-api-docs/src/OpenApiGenerator/` | OpenAPI 生成模組實作 |
+| 1 | [skills/laravel-api-docs/SKILL.md](skills/laravel-api-docs/SKILL.md) | Skill 規格全文，包含完整流程（Step 1–9） |
+| 2 | [skills/laravel-api-docs/bin/infer-candidates.php](skills/laravel-api-docs/bin/infer-candidates.php) | 候選推測執行入口 |
+| 3 | [skills/laravel-api-docs/bin/gen-openapi.php](skills/laravel-api-docs/bin/gen-openapi.php) | OpenAPI 生成執行入口 |
+| 4 | `skills/laravel-api-docs/src/InferCandidates/` | 候選推測模組實作 |
+| 5 | `skills/laravel-api-docs/src/OpenApiGenerator/` | OpenAPI 生成模組實作 |
 
 ### 理解 OpenSpec 流程
 
@@ -69,7 +69,7 @@ Agent-Skills/
 
 ## Laravel API 文件 Skill 核心流程摘要
 
-Skill 完整規格在 `skills/.curated/laravel-api-docs/SKILL.md`，以下為快速索引：
+Skill 完整規格在 `skills/laravel-api-docs/SKILL.md`，以下為快速索引：
 
 | Step | 名稱 | 關鍵點 |
 |------|------|--------|

@@ -16,7 +16,7 @@ npx skills add tom54699/agent-skills --skill laravel-api-docs
 ## 建議 GitHub 描述
 
 ```text
-Curated Codex agent skills for Laravel API docs workflows and future backend-focused automations.
+Codex agent skills for Laravel API docs workflows and AI project indexing.
 ```
 
 ## 建議 Topics
@@ -33,22 +33,12 @@ Curated Codex agent skills for Laravel API docs workflows and future backend-foc
 - repo 已設為 public
 - README 安裝指令使用 `tom54699/agent-skills`
 - README 與 `docs/` 連結皆為 GitHub 可用的相對路徑
-- `skills/.curated/` 內每個 skill 都有合法 `SKILL.md` frontmatter
-- 若有不想公開列出的 experimental skill，已設 `metadata.internal: true`
+- `skills/<skill-name>/` 內每個 skill 都有合法 `SKILL.md` frontmatter
+- 若有不想公開列出的 internal skill，已設 `metadata.internal: true`
 - 若需要安裝 internal skill，已知要使用 `INSTALL_INTERNAL_SKILLS=1`
 - 決定是否補上授權條款檔案，例如 `LICENSE`
 
-## Experimental Skills 規則
-
-### 一般 experimental skill
-
-如果只是還在驗證，但可以讓安裝者看到，可直接放在：
-
-```text
-skills/.experimental/<skill-name>/
-```
-
-### 不想被正常列出的 experimental skill
+## Internal Skills 規則
 
 若 skill 還不想被一般使用者列出或安裝，請在 `SKILL.md` frontmatter 補上：
 
