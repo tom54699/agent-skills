@@ -303,10 +303,11 @@ Redoc HTML 必須在 Apidog sync 完成後才決定是否產生。使用者選�
 
 若使用者需要補充文字內容：
 - 先討論內容
-- 先產出 `docs/api-docs/redoc/extra.md`
+- 先為本次生成起草或刷新補充內容
+- 可寫入 `docs/api-docs/redoc/extra.md` 作為最新版草稿，或用 `--extra-file <current-run-file>` 指定本次檔案
 - 再執行 `gen-html.sh --with-extra`
 
-HTML 額外內容不得回寫到 `openapi.yaml`。
+不得只因 `docs/api-docs/redoc/extra.md` 已存在就沿用舊補充內容；若使用者本次不需要補充內容，必須不帶 `--with-extra` 執行。HTML 額外內容不得回寫到 `openapi.yaml`。
 
 full HTML 生成時，`docs/api-docs/redoc/` 仍是最新版固定入口；同一次輸出也會建立 `docs/api-docs/versions/<version-id>/` 作為備份。
 
@@ -314,6 +315,7 @@ full HTML 生成時，`docs/api-docs/redoc/` 仍是最新版固定入口；同�
 - `openapi.yaml`：本次生成 HTML 時使用的 OpenAPI 快照
 - `redoc/index.html`：本次首頁快照
 - `redoc/api-docs.html`：本次純 Redoc 快照
+- `redoc/extra.md`：本次首頁使用的補充內容快照（僅在啟用補充內容時）
 
 `<version-id>` 使用本機時間 `YYYYMMDD-HHMMSS`；若同一秒重跑造成路徑已存在，會自動加遞增後綴避免覆蓋。若使用自訂 `--output` 產生臨時 HTML，則不建立正式版本快照。
 

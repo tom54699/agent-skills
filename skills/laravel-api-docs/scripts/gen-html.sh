@@ -19,6 +19,8 @@ PROGRESS_ENABLED=1
 GUIDED_TIMING_FILE="$(mktemp)"
 MARKDOWN_RENDERER="$SCRIPT_DIR/../bin/render-markdown.php"
 VERSION_DIR=""
+VERSION_EXTRA_FILE=""
+EXTRA_RENDER_FILE=""
 
 usage() {
   cat <<'USAGE'
@@ -88,7 +90,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 guided_progress_set_enabled "$PROGRESS_ENABLED"
-trap 'rm -f "$GUIDED_TIMING_FILE"' EXIT
+trap 'rm -f "$GUIDED_TIMING_FILE" "$EXTRA_RENDER_FILE"' EXIT
 
 guided_progress_emit "generate_html" "validate_input" "in_progress" 0 3 "starting html generation"
 guided_timing_begin "html_total"
@@ -113,6 +115,9 @@ if [ "$WITH_EXTRA" = true ]; then
     echo "錯誤：找不到額外內容檔案 $EXTRA_FILE" >&2
     exit 1
   fi
+
+  EXTRA_RENDER_FILE="$(mktemp)"
+  cp "$EXTRA_FILE" "$EXTRA_RENDER_FILE"
 fi
 
 echo "正在產出互動式 HTML 文件..." >&2
@@ -122,12 +127,12 @@ OPENAPI_JSON="$(yq -o=json '.' "$OPENAPI_FILE" | jq -c .)"
 EXTRA_HTML=""
 HOME_FILE="$(dirname "$OUTPUT_FILE")/index.html"
 if [ "$WITH_EXTRA" = true ]; then
-  EXTRA_HTML="$(php -n "$MARKDOWN_RENDERER" "$EXTRA_FILE")"
+  EXTRA_HTML="$(php -n "$MARKDOWN_RENDERER" "$EXTRA_RENDER_FILE")"
 fi
 
 mkdir -p "$(dirname "$OUTPUT_FILE")"
 TEMP_OUTPUT_FILE="$(mktemp)"
-trap 'rm -f "$GUIDED_TIMING_FILE" "$TEMP_OUTPUT_FILE"' EXIT
+trap 'rm -f "$GUIDED_TIMING_FILE" "$TEMP_OUTPUT_FILE" "$EXTRA_RENDER_FILE"' EXIT
 
 echo "產出 Redoc 文件..." >&2
 
@@ -274,7 +279,7 @@ REDOC_TAIL
 mv "$TEMP_OUTPUT_FILE" "$OUTPUT_FILE"
 
 HOME_TEMP_OUTPUT_FILE="$(mktemp)"
-trap 'rm -f "$GUIDED_TIMING_FILE" "$TEMP_OUTPUT_FILE" "$HOME_TEMP_OUTPUT_FILE"' EXIT
+trap 'rm -f "$GUIDED_TIMING_FILE" "$TEMP_OUTPUT_FILE" "$HOME_TEMP_OUTPUT_FILE" "$EXTRA_RENDER_FILE"' EXIT
 
 cat > "$HOME_TEMP_OUTPUT_FILE" <<'HOME_HEAD'
 <!DOCTYPE html>
@@ -629,6 +634,10 @@ if [ "$OUTPUT_FILE" = "$DEFAULT_OUTPUT_FILE" ]; then
   cp "$OPENAPI_FILE" "$VERSION_DIR/openapi.yaml"
   cp "$HOME_FILE" "$VERSION_DIR/redoc/index.html"
   cp "$OUTPUT_FILE" "$VERSION_DIR/redoc/api-docs.html"
+  if [ "$WITH_EXTRA" = true ]; then
+    VERSION_EXTRA_FILE="$VERSION_DIR/redoc/extra.md"
+    cp "$EXTRA_RENDER_FILE" "$VERSION_EXTRA_FILE"
+  fi
 fi
 
 guided_timing_end "gen-html" "render_html" "output=$OUTPUT_FILE"
@@ -647,6 +656,9 @@ else
 fi
 if [ -n "$VERSION_DIR" ]; then
   echo "  - 已建立版本備份：$VERSION_DIR" >&2
+  if [ -n "$VERSION_EXTRA_FILE" ]; then
+    echo "  - 已建立額外內容版本備份：$VERSION_EXTRA_FILE" >&2
+  fi
 else
   echo "  - 自訂輸出路徑不建立正式版本備份" >&2
 fi
@@ -657,6 +669,7 @@ jq -n \
   --arg home_file "$HOME_FILE" \
   --arg extra_file "$EXTRA_FILE" \
   --arg version_dir "$VERSION_DIR" \
+  --arg version_extra_file "$VERSION_EXTRA_FILE" \
   --argjson with_extra "$(if [ "$WITH_EXTRA" = true ]; then echo true; else echo false; fi)" \
   --argjson timings "$TIMINGS_JSON" \
   '{
@@ -664,6 +677,7 @@ jq -n \
     home_file: $home_file,
     extra_file: (if $with_extra then $extra_file else null end),
     version_dir: (if $version_dir == "" then null else $version_dir end),
+    version_extra_file: (if $version_extra_file == "" then null else $version_extra_file end),
     with_extra: $with_extra,
     timings: $timings,
     message: "已產出摘要首頁與 Redoc API 文件"

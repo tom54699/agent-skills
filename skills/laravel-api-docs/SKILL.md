@@ -25,6 +25,7 @@ description: 以 guided-sync 流程自動同步 Laravel API 文件。流程為�
 - `docs/api-docs/versions/<version-id>/openapi.yaml`：每次正式 HTML 生成時的 OpenAPI 快照
 - `docs/api-docs/versions/<version-id>/redoc/index.html`：每次正式 HTML 生成時的首頁備份
 - `docs/api-docs/versions/<version-id>/redoc/api-docs.html`：每次正式 HTML 生成時的純 Redoc 備份
+- `docs/api-docs/versions/<version-id>/redoc/extra.md`：本次正式 HTML 生成使用的補充內容快照（僅在啟用補充內容時）
 - `docs/api-docs/history/apidog-sync-history.jsonl`：同步歷史
 - `docs/api-docs/candidates/<timestamp>.json`：AI 推測候選清單
 - `docs/api-docs/candidates/<timestamp>.confirmed.json`：使用者確認後的最終清單
@@ -47,7 +48,7 @@ description: 以 guided-sync 流程自動同步 Laravel API 文件。流程為�
 - `docs/api-docs/history/apidog-sync-history.jsonl`（成功時 append 一筆）
 - `docs/api-docs/redoc/index.html`（僅在選擇產生 HTML 時）
 - `docs/api-docs/redoc/api-docs.html`（僅在選擇產生 HTML 時）
-- `docs/api-docs/versions/<version-id>/`（正式 HTML 生成時保存本次 OpenAPI 與 Redoc HTML 快照）
+- `docs/api-docs/versions/<version-id>/`（正式 HTML 生成時保存本次 OpenAPI、Redoc HTML 與補充內容快照）
 
 ## 分析模式（成本）
 
@@ -308,10 +309,11 @@ description: 以 guided-sync 流程自動同步 Laravel API 文件。流程為�
 - 對接注意事項
 4. 不應直接先用 `extra.md` 當成主提問詞；`extra.md` 是內部實作檔案，不是主要使用者概念。
 5. 若使用者選擇不要補充內容，流程再以純 HTML 繼續。
-6. 若使用者選擇要補充內容，LLM 必須先與使用者討論內容，並起草 `docs/api-docs/redoc/extra.md`。
-7. 未完成 `extra.md` 起草前，不得直接執行 `gen-html.sh --with-extra`。
-8. 若使用者選擇「否」，流程直接結束。
-9. 若存在 unresolved review artifact 且尚未完成 review decision，禁止跳過 Step 7 直接進 Step 9。
+6. 若使用者選擇要補充內容，LLM 必須先與使用者討論內容，並為本次生成起草或刷新補充內容。
+7. 未完成本次補充內容起草前，不得直接執行 `gen-html.sh --with-extra`。
+8. 不得只因 `docs/api-docs/redoc/extra.md` 已存在就沿用舊內容；若要使用既有檔案，必須先向使用者確認它就是本次內容。
+9. 若使用者選擇「否」，流程直接結束。
+10. 若存在 unresolved review artifact 且尚未完成 review decision，禁止跳過 Step 7 直接進 Step 9。
 
 ### Step 9：產生 Redoc HTML
 
@@ -322,16 +324,17 @@ description: 以 guided-sync 流程自動同步 Laravel API 文件。流程為�
 - `docs/api-docs/versions/<version-id>/openapi.yaml`
 - `docs/api-docs/versions/<version-id>/redoc/index.html`
 - `docs/api-docs/versions/<version-id>/redoc/api-docs.html`
+- 若啟用補充內容，額外保存 `docs/api-docs/versions/<version-id>/redoc/extra.md`
 3. `<version-id>` 使用本機時間 `YYYYMMDD-HHMMSS`，若同名資料夾已存在則加遞增後綴，避免覆蓋舊備份。
 4. `index.html` 是正式分享入口，承接同步摘要、補充說明與導覽；`docs/api-docs/redoc/` 永遠代表最新版。
 5. `api-docs.html` 必須保持為純 Redoc API 文件頁，不再把補充內容與 Redoc 混在同一頁。
-6. 依 Step 8 選項決定是否載入 `docs/api-docs/redoc/extra.md` 到 `index.html`。
-7. 若使用者在 Step 8 選擇補充內容，應先由 LLM 起草 `docs/api-docs/redoc/extra.md`，再進行 HTML 生成。
-8. 額外內容只放在 `docs/api-docs/redoc/extra.md`，不修改 OpenAPI。
+6. 依 Step 8 選項決定是否載入本次補充內容到 `index.html`。
+7. 若使用者在 Step 8 選擇補充內容，應先由 LLM 起草或刷新本次 markdown，再進行 HTML 生成；可寫入 `docs/api-docs/redoc/extra.md` 作為最新版草稿，或用 `--extra-file <current-run-file>` 指定本次檔案。
+8. 額外內容不得修改 OpenAPI；正式版本生成時，`gen-html.sh` 會把本次使用的 extra markdown 快照保存到版本資料夾。
 9. `gen-html.sh` 可使用：
 - `bash "$SKILL_DIR/gen-html.sh" --openapi docs/api-docs/openapi.yaml --with-extra`
-10. 若使用者要求載入額外內容但 `extra.md` 尚不存在，流程不應直接詢問「檔案不存在」；應先回到 Step 8 的內容討論與起草。
-11. 僅在使用者已明確選擇純 HTML 時，才能執行不帶額外內容的生成。
+10. 若使用者要求載入額外內容但本次內容尚未起草，流程不應直接詢問「檔案不存在」；應先回到 Step 8 的內容討論與起草。
+11. 僅在使用者已明確選擇不加補充內容時，才能執行不帶額外內容的生成；此時即使舊 `docs/api-docs/redoc/extra.md` 存在也不得載入。
 12. 即使沒有補充內容，`index.html` 仍應被產出為固定首頁，提供一致的分享入口與導覽。
 13. 若使用自訂 `--output` 產生臨時 HTML，該輸出不建立 `docs/api-docs/versions/` 正式版本快照。
 14. 若 Step 8 選擇 `changed-only`，必須先產生 subset OpenAPI：

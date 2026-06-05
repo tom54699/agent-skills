@@ -113,6 +113,17 @@ The skill MUST NOT auto-delete endpoints in OpenAPI during guided sync unless th
 - **AND** the user selects full output scope
 - **THEN** Step 9 generates Redoc from `docs/api-docs/openapi.yaml`
 
+#### Scenario: User chooses no extra content
+- **WHEN** Apidog sync succeeds and the user chooses to generate Redoc HTML
+- **AND** the user says no extra content is needed
+- **THEN** Step 9 MUST call `gen-html.sh` without `--with-extra`
+- **AND** any existing `docs/api-docs/redoc/extra.md` MUST NOT be reused implicitly
+
+#### Scenario: User chooses extra content
+- **WHEN** Apidog sync succeeds and the user chooses to include extra HTML content
+- **THEN** the LLM MUST draft or refresh current-run extra markdown before Step 9
+- **AND** Step 9 MUST render that current-run file via `--with-extra` or `--extra-file FILE`
+
 ### Requirement: Step 9 SHALL generate changed-only Redoc from subset OpenAPI
 When changed-only Redoc is selected, `guided-sync` Step 9 SHALL create a temporary or versioned subset OpenAPI from the confirmed candidate file and pass that file to `gen-html.sh --openapi <subset>`. The subset SHALL include only confirmed `new` and `updated` endpoint paths while preserving shared OpenAPI nodes.
 
@@ -141,4 +152,3 @@ When changed-only Redoc is selected, `guided-sync` Step 9 SHALL create a tempora
 - **WHEN** Step 7 cannot fetch API tree and no confirmed candidates contain `folder_id`
 - **THEN** the system reports that folder-aware upload is unavailable
 - **AND** the user must confirm fallback behavior before upload continues
-

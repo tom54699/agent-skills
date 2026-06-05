@@ -1,8 +1,5 @@
-# laravel-api-docs-redoc-extra-content Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change align-laravel-api-docs-runtime-and-tail-steps. Update Purpose after archive.
-## Requirements
 ### Requirement: Redoc generation can optionally render extra markdown content
 The system MUST allow guided-sync to include current-run extra markdown content in the generated HTML without mutating `docs/api-docs/openapi.yaml`.
 
