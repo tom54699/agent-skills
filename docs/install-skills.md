@@ -4,6 +4,7 @@
 
 - `skills/laravel-api-docs/`
 - `skills/ai-project-index/`
+- `skills/business-logic-workflow/`
 
 ## 建議安裝方式
 
@@ -11,6 +12,7 @@
 
 ```bash
 npx skills add tom54699/agent-skills --skill laravel-api-docs
+npx skills add tom54699/agent-skills --skill business-logic-workflow
 ```
 
 常見延伸形式：
@@ -36,6 +38,12 @@ npx skills add tom54699/agent-skills --skill laravel-api-docs --global
 - 位置：`skills/ai-project-index`
 - 用途：產生、查詢與稽核給 AI 使用的輕量專案索引
 - 產物：`.ai-project-index/index.json`、`.ai-project-index/audit.json`
+
+### `business-logic-workflow`
+
+- 位置：`skills/business-logic-workflow`
+- 用途：整理需求單 Business Logic Brief、舊邏輯 As-Is、As-Is/To-Be/Delta、證據與不確定點
+- 文件目錄：不預設初始化固定目錄；只有使用者明確要求保存時才討論長期文件落點
 
 ## 更新提醒現況
 

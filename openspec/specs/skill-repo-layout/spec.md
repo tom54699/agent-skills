@@ -16,6 +16,11 @@ The repository MUST store active project skills directly under `skills/<skill-na
 - **THEN** the repository MAY describe that status in documentation or skill metadata
 - **AND** the skill MUST NOT require a `.curated` or `.experimental` path segment
 
+#### Scenario: Business logic workflow skill is available
+- **WHEN** the user looks for the business logic documentation workflow
+- **THEN** the skill MUST exist at `skills/business-logic-workflow`
+- **AND** active repository documents MUST reference the direct skill path
+
 ### Requirement: Repo documents repo-based installation
 The repository MUST document repo-based installation for public skills.
 

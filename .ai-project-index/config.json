@@ -14,6 +14,7 @@
     "skills/laravel-api-docs/src/OpenApiGenerator/OpenApiGenerator.php",
     "skills/ai-project-index/SKILL.md",
     "skills/ai-project-index/scripts/*.py",
+    "skills/business-logic-workflow/SKILL.md",
     "openspec/specs/*.md",
     "docs/*.md",
     "tests/*.php",

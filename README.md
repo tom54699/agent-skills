@@ -14,6 +14,7 @@
 
 ```bash
 npx skills add tom54699/agent-skills --skill laravel-api-docs
+npx skills add tom54699/agent-skills --skill business-logic-workflow
 ```
 
 常見變體：
@@ -66,3 +67,9 @@ npx skills update laravel-api-docs -p
 位置：`skills/ai-project-index`
 
 產生、查詢與稽核給 AI 使用的輕量專案索引。索引只作為 source/spec/docs/tests 的 routing aid，不是 source of truth。
+
+### `business-logic-workflow`
+
+位置：`skills/business-logic-workflow`
+
+用來引導 AI 與使用者在需求單討論、舊功能理解、重構前調查或新舊邏輯比較時，整理 scoped Business Logic Brief、As-Is、To-Be、Delta、證據與不確定點。它不是自動文件產生器，也不要求先有 OpenSpec；只有使用者明確要求保存時，才討論長期文件落點。

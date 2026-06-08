@@ -23,7 +23,8 @@ Agent-Skills/
 │   │   │   ├── InferCandidates/  # 候選 API 推測模組
 │   │   │   └── OpenApiGenerator/ # OpenAPI 生成模組
 │   │   └── scripts/              # Shell 腳本（progress-lib.sh 等）
-│   └── ai-project-index/         # AI 專案索引 skill
+│   ├── ai-project-index/         # AI 專案索引 skill
+│   └── business-logic-workflow/  # 業務邏輯理解 workflow skill
 │
 ├── .codex/skills/                # OpenSpec workflow skills（流程控制）
 │   ├── openspec-explore/         # 探索模式：思考問題，不實作
@@ -41,7 +42,7 @@ Agent-Skills/
 
 ---
 
-## 業務邏輯文件閱讀順序
+## 業務邏輯理解流程閱讀順序
 
 ### 理解 Laravel API 文件同步功能
 
@@ -64,6 +65,14 @@ Agent-Skills/
 | 3 | [.codex/skills/openspec-apply-change/SKILL.md](.codex/skills/openspec-apply-change/SKILL.md) | 如何依 tasks 實作 |
 | 4 | [.codex/skills/openspec-archive-change/SKILL.md](.codex/skills/openspec-archive-change/SKILL.md) | 如何歸檔完成的 change |
 | 5 | [.codex/skills/openspec-explore/SKILL.md](.codex/skills/openspec-explore/SKILL.md) | 探索/思考模式（不實作） |
+
+### 討論與維護業務邏輯
+
+| 順序 | 檔案 | 說明 |
+|------|------|------|
+| 1 | [skills/business-logic-workflow/SKILL.md](skills/business-logic-workflow/SKILL.md) | 需求單 brief、舊邏輯 As-Is、As-Is/To-Be/Delta 與保存決策流程 |
+
+業務邏輯理解流程不要求專案採用 DDD 架構，也不要求先有 OpenSpec。需求單、舊功能調查或重構前，應先確認 scope、證據與不確定點；只有使用者明確要求保存時，才更新長期文件。未確認內容不得寫成已確認事實。
 
 ---
 
