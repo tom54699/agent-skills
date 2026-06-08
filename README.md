@@ -13,6 +13,7 @@
 公開 repo 後，建議直接用 repo-based 方式安裝：
 
 ```bash
+npx skills add tom54699/agent-skills --skill development-workflow
 npx skills add tom54699/agent-skills --skill laravel-api-docs
 npx skills add tom54699/agent-skills --skill business-logic-workflow
 ```
@@ -48,6 +49,12 @@ npx skills update laravel-api-docs -p
 完整安裝說明見 [docs/install-skills.md](docs/install-skills.md)，公開發佈整理見 [docs/publish-skills.md](docs/publish-skills.md)。
 
 ## Skills
+
+### `development-workflow`
+
+位置：`skills/development-workflow`
+
+用來初始化新專案的 AI 協作規則，並定義日常開發時各 workflow skills 的搭配順序。主要入口是 `development-workflow init`，會先產生初始化計畫，確認後才建立或更新 `AGENTS.md`、`CLAUDE.md`、文件規則、OpenSpec 規則與索引更新規則。
 
 ### `laravel-api-docs`
 

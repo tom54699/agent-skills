@@ -1,6 +1,7 @@
 {
   "includePaths": [
     "AGENTS.md",
+    "skills/development-workflow/SKILL.md",
     ".codex/skills/openspec-*/SKILL.md"
   ],
   "excludePaths": [
@@ -15,6 +16,8 @@
     "skills/ai-project-index/SKILL.md",
     "skills/ai-project-index/scripts/*.py",
     "skills/business-logic-workflow/SKILL.md",
+    "skills/development-workflow/SKILL.md",
+    "skills/development-workflow/assets/*.md",
     "openspec/specs/*.md",
     "docs/*.md",
     "tests/*.php",

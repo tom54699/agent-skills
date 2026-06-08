@@ -5,12 +5,14 @@
 - `skills/laravel-api-docs/`
 - `skills/ai-project-index/`
 - `skills/business-logic-workflow/`
+- `skills/development-workflow/`
 
 ## 建議安裝方式
 
 若 repo 已公開到 GitHub，建議直接使用 repo-based 安裝：
 
 ```bash
+npx skills add tom54699/agent-skills --skill development-workflow
 npx skills add tom54699/agent-skills --skill laravel-api-docs
 npx skills add tom54699/agent-skills --skill business-logic-workflow
 ```
@@ -26,6 +28,13 @@ npx skills add tom54699/agent-skills --skill laravel-api-docs --global
 請依你使用的 installer 版本與 agent 類型決定是否需要加上 `--agent`、`--global` 等參數。
 
 ## 目前可用 Skill
+
+### `development-workflow`
+
+- 位置：`skills/development-workflow`
+- 用途：初始化新專案 AI 協作規則，並定義新需求、舊邏輯/重構、純技術小修、OpenSpec 與 `.ai-project-index` 的搭配流程
+- 主要入口：`development-workflow init`
+- 模板：`skills/development-workflow/assets/AGENTS.template.md`、`skills/development-workflow/assets/CLAUDE.template.md`
 
 ### `laravel-api-docs`
 

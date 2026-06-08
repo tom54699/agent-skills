@@ -22,7 +22,8 @@ Agent-Skills/
 │   │   │   └── OpenApiGenerator/ # OpenAPI 生成模組
 │   │   └── scripts/              # Shell 腳本（progress-lib.sh 等）
 │   ├── ai-project-index/         # AI 專案索引 skill
-│   └── business-logic-workflow/  # 業務邏輯理解 workflow skill
+│   ├── business-logic-workflow/  # 業務邏輯理解 workflow skill
+│   └── development-workflow/     # 新專案初始化與開發流程統合 skill
 │
 ├── .codex/skills/                # OpenSpec workflow skills（流程控制）
 │   ├── openspec-explore/         # 探索模式：思考問題，不實作
@@ -41,6 +42,16 @@ Agent-Skills/
 ---
 
 ## 業務邏輯理解流程閱讀順序
+
+### 理解 AI 開發流程統合
+
+| 順序 | 檔案 | 說明 |
+|------|------|------|
+| 1 | `skills/development-workflow/SKILL.md` | `development-workflow init`、skills 搭配流程、純技術小修分流與專案協作規則模板 |
+| 2 | `skills/development-workflow/assets/AGENTS.template.md` | 新專案 `AGENTS.md` 範本 |
+| 3 | `skills/development-workflow/assets/CLAUDE.template.md` | 新專案 `CLAUDE.md` 範本 |
+
+`development-workflow` 是薄層流程入口，用來決定何時使用 `business-logic-workflow`、OpenSpec workflow skills 與 `.ai-project-index`；它不取代這些 specialized skills。
 
 ### 理解 Laravel API 文件同步功能
 
