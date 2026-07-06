@@ -2,7 +2,6 @@
 
 ## Purpose
 定義本專案的 `ai-project-index` skill：產生、查詢、稽核一份給 AI 使用的輕量專案索引，作為 source/spec/docs/tests 的 routing aid，而不是 source of truth。
-
 ## Requirements
 ### Requirement: AI Project Index Skill
 The repository SHALL provide an `ai-project-index` skill that generates a compact AI-facing project index without requiring a dashboard or domain graph.
@@ -58,6 +57,11 @@ The skill SHALL provide an audit command that reports whether the generated inde
 - **WHEN** the generated index records a git commit that differs from the current repository commit
 - **THEN** the audit command MUST report the index as stale
 - **AND** the audit status MUST be warning
+
+#### Scenario: Index schema version audit
+- **WHEN** the audit command reads an `index.json` whose `version` field does not match the auditor's expected schema version
+- **THEN** the audit command MUST report the audit status as warning with a `version_mismatch` reason
+- **AND** it MUST NOT silently produce an `ok` status for a schema version it does not recognize
 
 ### Requirement: Generated Documentation Drafts
 The skill MAY generate documentation drafts from the compact index, but generated drafts SHALL remain local-regenerate output and SHALL NOT become source of truth without review.
@@ -127,3 +131,11 @@ The skill SHALL document how AI agents use `.ai-project-index` as routing contex
 - **WHEN** the audit status is warning because the index is stale, incomplete, or structurally invalid
 - **THEN** the agent MUST refresh and re-audit the index before relying on it for routing
 - **AND** the agent MAY still read source files directly without using the index
+
+### Requirement: Skill Version Metadata
+The skill SHALL carry a version identifier to support future compatibility checks.
+
+#### Scenario: SKILL.md declares a version
+- **WHEN** the skill's frontmatter is inspected
+- **THEN** it MUST include a `metadata.version` field
+

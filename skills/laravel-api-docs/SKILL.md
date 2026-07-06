@@ -1,6 +1,8 @@
 ---
 name: laravel-api-docs
 description: 以 guided-sync 流程自動同步 Laravel API 文件。流程為：AI 先依上次成功同步 commit 推導 Git 變更範圍並推測候選 API 清單，與使用者討論確認後更新 docs/api-docs/openapi.yaml，同步至 Apidog，最後依需求產生 Redoc HTML。當使用者說「幫我產生 API 文件」、「更新 API 文件」、「文件同步」、「sync api docs」時觸發。僅用於 Laravel 專案。
+metadata:
+  version: "1.0.0"
 ---
 
 # Laravel API 文件同步（guided-sync）
@@ -347,6 +349,7 @@ description: 以 guided-sync 流程自動同步 Laravel API 文件。流程為�
 檔案：`docs/api-docs/history/apidog-sync-history.jsonl`
 
 每行一筆 compact JSON，欄位：
+- `schema_version`：本筆紀錄的欄位結構版本（目前為 `1`）
 - `sync_id`：唯一識別碼
 - `synced_at`：ISO 8601 時間（後續 Step 3 日常流程的基準）
 - `from_time`：本次推測起始時間
@@ -365,13 +368,14 @@ description: 以 guided-sync 流程自動同步 Laravel API 文件。流程為�
 範例：
 
 ```json
-{"sync_id":"20260306T161500Z-a1b2c3","synced_at":"2026-03-06T16:15:00Z","from_time":"2026-03-05T10:20:00Z","to_time":"2026-03-06T16:15:00Z","git_head_commit":"a1b2c3d4","git_branch":"main","path_strategy":"strip-api-prefix-to-server","openapi_sha256":"...","apidog_project_id":"123456","imported_count":8,"updated_count":3,"skipped_count":21,"conflict_count":1,"status":"success"}
+{"schema_version":1,"sync_id":"20260306T161500Z-a1b2c3","synced_at":"2026-03-06T16:15:00Z","from_time":"2026-03-05T10:20:00Z","to_time":"2026-03-06T16:15:00Z","git_head_commit":"a1b2c3d4","git_branch":"main","path_strategy":"strip-api-prefix-to-server","openapi_sha256":"...","apidog_project_id":"123456","imported_count":8,"updated_count":3,"skipped_count":21,"conflict_count":1,"status":"success"}
 ```
 
 規則：
 - Step 3 日常流程優先使用最後一筆 `status=success` 的 `git_head_commit` 當 commit baseline。
 - 日常與 generator 優先沿用最後一筆 success 的 `path_strategy`；若 legacy history 缺少該欄位，才回退偵測或舊預設。
 - 若 `git_head_commit` 缺失、不可用或不再是 `HEAD` 祖先，才回退使用最後一筆 success 的 `synced_at`。
+- `schema_version` 缺失的舊紀錄視為隱含版本 1，比照 `path_strategy` 的容錯精神：缺少新欄位時回退偵測或舊預設，不強制要求既有歷史紀錄補齊欄位或遷移。未來新增/改名欄位時，應評估是否需要遞增 `schema_version`。
 - 上傳失敗可記 `failed`，但不可覆蓋成功基準。
 
 ## 錯誤處理

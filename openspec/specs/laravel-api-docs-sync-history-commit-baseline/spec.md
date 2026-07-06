@@ -25,3 +25,15 @@ The system MUST make its range-selection basis observable so users can determine
 - **WHEN** daily guided-sync cannot use the last successful `git_head_commit` and falls back to the legacy time-window strategy
 - **THEN** candidate output metadata MUST identify the fallback strategy
 
+### Requirement: Sync history records SHALL carry a schema version
+The system SHALL include a `schema_version` field in newly appended sync history records, and MUST tolerate its absence in older records.
+
+#### Scenario: New history record includes schema version
+- **WHEN** guided-sync appends a new record to `docs/api-docs/history/apidog-sync-history.jsonl`
+- **THEN** the record MUST include a `schema_version` field
+
+#### Scenario: Legacy records without schema version remain valid
+- **WHEN** older history records exist without `schema_version`
+- **THEN** the system MUST continue accepting those records
+- **AND** it MUST NOT require manual history migration before the next run
+

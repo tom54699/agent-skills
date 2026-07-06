@@ -7,6 +7,8 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
+EXPECTED_SCHEMA_VERSION = "1.0.0"
+
 
 def git_commit(root):
     try:
@@ -28,7 +30,7 @@ def pattern_covered(paths, pattern):
 
 def warning_audit(args, root, reason, detail):
     audit = {
-        "version": "1.0.0",
+        "version": EXPECTED_SCHEMA_VERSION,
         "generatedAt": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
         "indexPath": args.index,
         "status": "warning",
@@ -90,6 +92,16 @@ def main():
         warning_audit(args, root, "invalid_structure", "index root must be an object")
         return
 
+    index_version = index.get("version")
+    if index_version is not None and index_version != EXPECTED_SCHEMA_VERSION:
+        warning_audit(
+            args,
+            root,
+            "version_mismatch",
+            f"index.json version {index_version!r} does not match expected {EXPECTED_SCHEMA_VERSION!r}",
+        )
+        return
+
     files = index.get("files", [])
     if not isinstance(files, list):
         schema_errors.append({"reason": "invalid_files", "detail": "files must be an array"})
@@ -126,7 +138,7 @@ def main():
     stale = bool(current_commit and indexed_commit and current_commit != indexed_commit)
 
     audit = {
-        "version": "1.0.0",
+        "version": EXPECTED_SCHEMA_VERSION,
         "generatedAt": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
         "indexPath": args.index,
         "status": "ok",

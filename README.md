@@ -28,7 +28,7 @@ npx skills add tom54699/agent-skills --skill laravel-api-docs --global
 
 ## 更新
 
-已安裝過的 skill 可直接使用 `skills` CLI 更新：
+已安裝過的 skill 可直接使用 `skills` CLI 拉新版：
 
 ```bash
 npx skills update laravel-api-docs
@@ -45,6 +45,17 @@ npx skills update laravel-api-docs -g
 ```bash
 npx skills update laravel-api-docs -p
 ```
+
+**拉完新版之後，要不要再做什麼，依改動類型而不同：**
+
+| 改動類型 | 拉新版後要做的事 |
+|---|---|
+| 純 `SKILL.md` 內容調整（多數日常變更） | 不用做任何事，下次觸發這個 skill 時就是新邏輯 |
+| `development-workflow` 的 plugin 推薦/決策 | 重跑 `development-workflow init`——會讀取專案既有 `AGENTS.md`/`CLAUDE.md` 的「Plugin Decisions」記錄與 `.claude/settings.json` 的 `enabledPlugins`，只詢問新增或缺少的項目，不會重複推薦已安裝的 plugin |
+| `ai-project-index` 的索引格式（schema）| 若專案殘留舊格式 `index.json`，下次跑 `audit-index.py` 會回報 `warning` + `version_mismatch`（不會靜默略過）；看到這個訊號就重新跑 `generate-index.py` 產生新版索引 |
+| `laravel-api-docs`/`business-logic-workflow` 的輸出格式 | `schema_version`/`Generated-by` 只是標記，沒有自動比對，舊資料照常可用，不用做任何事 |
+
+**已知缺口**：如果未來的改動牽涉到 `assets/AGENTS.template.md`/`CLAUDE.template.md` **新增的行為原則章節**（不是 plugin 決策），目前重跑 `init` 沒有系統化的「比對模板、只補缺少章節」機制，仍然只能依賴「保留既有規則、提案式合併」這個籠統原則，實務上要靠當下判斷該補什麼。
 
 完整安裝說明見 [docs/install-skills.md](docs/install-skills.md)，公開發佈整理見 [docs/publish-skills.md](docs/publish-skills.md)。
 

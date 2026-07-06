@@ -1,6 +1,8 @@
 ---
 name: business-logic-workflow
 description: Use when the user provides a requirement ticket, asks to discuss business logic, asks to understand old or unfamiliar project behavior, asks to refactor behavior safely, or asks to compare old and new business rules. Produces scoped Business Logic Brief, As-Is, To-Be, Delta, evidence, uncertainty, and promotion decisions without requiring OpenSpec, DDD, or permanent docs.
+metadata:
+  version: "1.0.0"
 ---
 
 # Business Logic Workflow
@@ -143,6 +145,7 @@ Use only the sections needed for the task.
 # <需求或功能名稱> Business Logic Brief
 
 Status: draft
+Generated-by: business-logic-workflow v1.0.0
 Scope: <本次範圍>
 Source: <需求單、使用者描述、issue、文件>
 
@@ -164,6 +167,7 @@ Source: <需求單、使用者描述、issue、文件>
 # <範圍> As-Is Business Logic
 
 Status: draft
+Generated-by: business-logic-workflow v1.0.0
 Scope: <調查範圍>
 
 ## 已確認舊邏輯
@@ -182,6 +186,7 @@ Scope: <調查範圍>
 # <需求或變更> Business Logic Delta
 
 Status: draft
+Generated-by: business-logic-workflow v1.0.0
 Scope: <變更範圍>
 
 ## As-Is

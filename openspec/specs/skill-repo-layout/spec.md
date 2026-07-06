@@ -21,11 +21,6 @@ The repository MUST store active project skills directly under `skills/<skill-na
 - **THEN** the skill MUST exist at `skills/business-logic-workflow`
 - **AND** active repository documents MUST reference the direct skill path
 
-#### Scenario: Development workflow skill is available
-- **WHEN** the user looks for the AI development workflow initializer
-- **THEN** the skill MUST exist at `skills/development-workflow`
-- **AND** active repository documents MUST reference the direct skill path
-
 ### Requirement: Repo documents repo-based installation
 The repository MUST document repo-based installation for public skills.
 
@@ -41,3 +36,4 @@ The `laravel-api-docs` skill MUST be distributed from the direct skill location.
 - **WHEN** the user looks for `laravel-api-docs`
 - **THEN** the skill MUST exist at `skills/laravel-api-docs`
 - **AND** active repository documents MUST reference the direct skill path instead of `.curated` or legacy flat path variants
+

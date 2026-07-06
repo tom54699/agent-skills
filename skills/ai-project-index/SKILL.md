@@ -1,6 +1,8 @@
 ---
 name: ai-project-index
 description: Generate, query, audit, and optionally document a compact AI-facing project index for this repository. Use when an agent needs repository structure, relevant source/spec/test/doc paths, or a low-token discovery index before reading source-of-truth files.
+metadata:
+  version: "1.0.0"
 ---
 
 # AI Project Index
