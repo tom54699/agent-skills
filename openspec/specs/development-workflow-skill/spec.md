@@ -102,7 +102,7 @@ The skill SHALL classify Claude Code marketplace plugins into recommendation tie
 
 #### Scenario: Stack-specific tier depends on detected signals
 - **WHEN** a PHP/Laravel, Python, frontend framework, or Prisma signal is detected
-- **THEN** the skill MUST offer the corresponding stack-specific plugins (`laravel-boost`/`php-lsp` for PHP/Laravel, `pyright-lsp` for Python, `figma`/`frontend-design`/`typescript-lsp`/`playwright`/`chrome-devtools-mcp` for frontend, `prisma` only when `schema.prisma` is detected) as a multi-select choice
+- **THEN** the skill MUST use the AskUserQuestion tool to present the corresponding stack-specific plugins (`laravel-boost`/`php-lsp` for PHP/Laravel, `pyright-lsp` for Python, `figma`/`frontend-design`/`typescript-lsp`/`playwright`/`chrome-devtools-mcp` for frontend, `prisma` only when `schema.prisma` is detected) as an interactive multi-select choice, rather than only listing them in the written initialization plan
 - **AND** it MUST NOT suggest a stack-specific plugin when its corresponding signal is absent
 
 #### Scenario: Conditional tier requires explicit caveat disclosure
@@ -126,6 +126,16 @@ The skill SHALL classify Claude Code marketplace plugins into recommendation tie
 #### Scenario: Plugin decisions are recorded for future init runs
 - **WHEN** the user confirms an initialization plan that includes plugin recommendations
 - **THEN** the skill MUST record each plugin's resulting status (installed, declined, or excluded-conflict-noted) in a "Plugin Decisions" section of `AGENTS.md` or `CLAUDE.md`
+
+#### Scenario: Install scope has tier-based defaults
+- **WHEN** the skill recommends installing a plugin
+- **THEN** it MUST propose a default install scope (Claude Code user/global scope for the mandatory tier, project-shared scope for the stack-specific and conditional tiers)
+- **AND** the recorded Plugin Decisions MUST capture the resulting scope
+
+#### Scenario: Install scope is confirmed by the user
+- **WHEN** the skill proposes a default install scope for one or more plugins
+- **THEN** it MUST let the user confirm or override the scope before treating a plugin as decided
+- **AND** it MUST NOT assume the default scope without confirmation
 
 ### Requirement: Hook Recommendations
 The skill SHALL suggest using the `hookify` plugin to enforce two specific rules as hooks instead of relying on prose reminders alone.

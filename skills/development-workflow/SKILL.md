@@ -125,7 +125,7 @@ Based on evaluation of the `claude-plugins-official` marketplace (and a couple o
 - `skill-creator`: scaffolding help for building new skills, matching this repo's actual purpose.
 - `hookify`: lets you create hooks from plain-language descriptions or simple markdown files instead of hand-writing `settings.json` hook config. Also the recommended mechanism for "Hook Recommendations" below.
 
-**Stack-specific (offer as a multi-select only when the corresponding signal is detected)**
+**Stack-specific (use the AskUserQuestion tool for an interactive multi-select only when the corresponding signal is detected — do not just list these in the written plan and move on)**
 | Detected signal | Candidate plugins |
 |---|---|
 | PHP/Laravel (`composer.json` has `laravel/framework`) | `laravel-boost`, `php-lsp` |
@@ -156,6 +156,15 @@ Before presenting any of the tiers above, cross-check candidates against `enable
 
 After the user confirms an initialization plan that includes plugin recommendations, record each plugin's resulting status (`installed`, `declined`, or `excluded-conflict-noted`) in a "Plugin Decisions" section of `AGENTS.md` or `CLAUDE.md`, so a future `init` run can read it back instead of starting from zero.
 
+**Install scope**
+
+Claude Code plugins can be installed at user (global), project (shared via `.claude/settings.json`, git-tracked), or project-local (`.claude/settings.local.json`, gitignored, personal-only) scope. Propose a default, but never assume it without confirmation:
+
+- Mandatory tier: default to **user scope** — these are personal productivity tools that should follow you across projects, not just this one.
+- Stack-specific and conditional tiers: default to **project scope** — these benefit teammates working on the same codebase, so they should travel with the repo.
+
+Let the user confirm or override the scope for each plugin (or accept the defaults as a batch) before recording it as `installed` in Plugin Decisions. Record the resulting scope alongside the status.
+
 ### Hook Recommendations
 
 If `hookify` is installed or being recommended as part of the mandatory tier, suggest using it (instead of hand-written `settings.json` hooks) to encode two rules that are currently only prose reminders elsewhere in this skill:
@@ -176,10 +185,10 @@ Project type: <detected type>
 Existing policy files: <found/missing>
 OpenSpec: <found/missing/recommended?>
 Detected stack signals: <PHP/Laravel, Python, frontend, Prisma — list what was detected>
-Plugin recommendations:
-- Mandatory: <list>
-- Stack-specific (confirm): <list>
-- Conditional (caveat applies): <list>
+Plugin recommendations (each with proposed install scope: user/project/local):
+- Mandatory: <list, default scope: user>
+- Stack-specific (confirm via AskUserQuestion): <list, default scope: project>
+- Conditional (caveat applies): <list, default scope: project>
 - Already installed (skipped): <list>
 - Excluded-tier conflicts detected: <list, with reason>
 Recommended skills:
