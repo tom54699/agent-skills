@@ -80,3 +80,10 @@ npx skills update laravel-api-docs -p
 位置：`skills/business-logic-workflow`
 
 用來引導 AI 與使用者在需求單討論、舊功能理解、重構前調查或新舊邏輯比較時，整理 scoped Business Logic Brief、As-Is、To-Be、Delta、證據與不確定點。它不是自動文件產生器，也不要求先有 OpenSpec；只有使用者明確要求保存時，才討論長期文件落點。
+
+## 參考與致謝
+
+制定 skills 與協作規則時，也參考了社群分享的其他工具：
+
+- [andrej-karpathy-skills](https://github.com/multica-ai/andrej-karpathy-skills) — 節錄其 Think Before Coding / Simplicity First / Surgical Changes 三條行為準則，加入根目錄 `AGENTS.md`/`CLAUDE.md` 與 `development-workflow` 的 `AGENTS.template.md` / `CLAUDE.template.md`
+- [Understand Anything](https://github.com/Egonex-AI/Understand-Anything) — 另一款程式碼理解工具，用於產生知識圖譜（輸出於本 repo 的 `.understand-anything/`，已列入 `.gitignore`），與本專案的 `ai-project-index` skill 概念相近但非本專案開發
