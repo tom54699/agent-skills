@@ -124,6 +124,7 @@ echo "正在產出互動式 HTML 文件..." >&2
 guided_progress_emit "generate_html" "validate_input" "in_progress" 1 3 "openapi ready"
 guided_timing_begin "render_html"
 OPENAPI_JSON="$(yq -o=json '.' "$OPENAPI_FILE" | jq -c .)"
+API_ENDPOINT_COUNT="$(printf '%s' "$OPENAPI_JSON" | jq '[.paths // {} | to_entries[] | .value | to_entries[] | select(.key | test("^(get|put|post|delete|options|head|patch|trace)$"))] | length')"
 EXTRA_HTML=""
 HOME_FILE="$(dirname "$OUTPUT_FILE")/index.html"
 if [ "$WITH_EXTRA" = true ]; then
@@ -579,18 +580,16 @@ cat > "$HOME_TEMP_OUTPUT_FILE" <<'HOME_HEAD'
       </article>
       <aside class="hero-side">
         <div class="stat-grid">
+HOME_HEAD
+
+cat >> "$HOME_TEMP_OUTPUT_FILE" <<HOME_STATS
           <div class="stat-card">
-            <strong>26</strong>
-            <span>本輪同步 API 數量</span>
+            <strong>${API_ENDPOINT_COUNT}</strong>
+            <span>API 端點數量</span>
           </div>
-          <div class="stat-card">
-            <strong>22</strong>
-            <span>本次新增錯誤碼</span>
-          </div>
-          <div class="stat-card">
-            <strong>3</strong>
-            <span>錯誤碼功能分段</span>
-          </div>
+HOME_STATS
+
+cat >> "$HOME_TEMP_OUTPUT_FILE" <<'HOME_MID'
           <div class="stat-card">
             <strong>2</strong>
             <span>文件頁：首頁 + API Reference</span>
@@ -601,7 +600,7 @@ cat > "$HOME_TEMP_OUTPUT_FILE" <<'HOME_HEAD'
 
     <section class="content-shell">
       <main class="content-main" id="summary-content">
-HOME_HEAD
+HOME_MID
 if [ "$WITH_EXTRA" = true ]; then
   printf '%s\n' "$EXTRA_HTML" >> "$HOME_TEMP_OUTPUT_FILE"
 else
