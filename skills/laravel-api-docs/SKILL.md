@@ -442,6 +442,15 @@ guided-sync 目前以 PHP analyzer / generator 為主路徑，請先修正 PHP �
 
 > 「幫我產生 API 文件」、「更新 API 文件」、「文件同步」仍進入 guided-sync 主流程。
 
+### 點名特定 API 時的模式判斷（避免來回確認）
+
+cherry-pick 只會從既有 `docs/api-docs/openapi.yaml` 挑選、重新上傳或重新產生 Redoc，**不會重新分析 Laravel 原始碼**。當使用者的話點名了一個或少數幾個具體 API/endpoint（而不是「全部」、「所有 API」這類全面性字眼），但沒有明確用到上面的 cherry-pick 觸發詞，這句話本身無法判斷使用者是要：
+
+- (a) 那支 API 的程式碼是新寫或剛改過，需要重新分析原始碼 → 屬於 guided-sync，但可以把分析範圍口頭確認為「只針對這支 API」
+- (b) 那支 API 程式碼沒變，只是要重新上傳/重新產生既有 spec 裡已經有的文件 → 屬於 cherry-pick
+
+LLM **必須在執行任何腳本前**，用一句話直接問清楚是 (a) 還是 (b)，不得先假設走 guided-sync 主流程、等使用者跑完/看到結果才發現不是他要的。判斷用的問句範例：「這支 API 的程式碼是不是剛寫/改過？如果是，我會照 guided-sync 分析，但只針對這支；如果程式碼沒變、只是要重新出文件，我會走 cherry-pick，直接從既有 spec 挑出來。」
+
 ### 流程
 
 1. **列出現有 endpoint 清單**
