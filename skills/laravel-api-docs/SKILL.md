@@ -131,7 +131,7 @@ metadata:
 ### Step 4：AI 推測候選 API 清單（先猜）
 
 1. 解析 Step 3 的 commit 變更內容，整理受影響檔案。
-2. 以 `php -n artisan route:list --json` 取得目前路由清單，避免本機 PHP extension warning 汙染 JSON。
+2. 以 `php -n artisan route:list --json` 取得目前路由清單，避免本機 PHP extension warning 汙染 JSON。同一條路由若以 `Route::match([...])`／`Route::any()` 註冊多個 HTTP method，route index 必須把每個非 `HEAD`/`OPTIONS` method 各自展開成一筆獨立項目，不得只取第一個，否則其餘 method 會在候選推測與比對階段完全消失。
 3. 根據變更來源推測候選 endpoint：
 - `routes/*` 變更：高信心候選
 - Controller 變更：以 diff 命中的 `Controller@action` 反查 endpoint（避免整個 controller 全入列）；但純 method body diff 只視為弱訊號，不得單獨成立 `updated`
@@ -220,24 +220,25 @@ metadata:
 - `bash "$SKILL_DIR/confirm-candidates.sh" --input <working-list.json> --output docs/api-docs/candidates/<timestamp>.confirmed.json`
 - `bash "$SKILL_DIR/gen-openapi.sh" --candidate-file docs/api-docs/candidates/<timestamp>.confirmed.json --incremental`
 5. 若 `confirmed.json` 內只有 `deleted` 項目，仍必須允許更新既有 OpenAPI 並套用刪除。
-6. 完成後檢查 YAML 結構合法。
-7. `gen-openapi.sh` 現在是 PHP generator 的 thin wrapper；controller / service / FormRequest 解析應在單一 PHP 程序內完成，而不是由 shell parser 作為主路徑。
-8. `gen-openapi.sh` 執行中應顯示至少：
+6. 若 confirmed 清單中有 method+path 比對不到任何 route（例如 route index 尚未涵蓋、或使用者誤標），`gen-openapi.sh` 必須把這些落單項目明確列成獨立、顯眼的一行警告（`method+path` 清單），不得只藏在 timing 訊息或數字裡。
+7. 完成後檢查 YAML 結構合法。
+8. `gen-openapi.sh` 現在是 PHP generator 的 thin wrapper；controller / service / FormRequest 解析應在單一 PHP 程序內完成，而不是由 shell parser 作為主路徑。
+9. `gen-openapi.sh` 執行中應顯示至少：
 - workflow checklist
 - 當前 `update_openapi` progress bar
 - `guided-timing: route_snapshot / candidate_normalization / endpoint_generation / merge_openapi / apply_deletions / write_output`
-9. 若生成過程存在 unresolved request / response / security analysis，必須額外輸出 review artifact，例如：
+10. 若生成過程存在 unresolved request / response / security analysis，必須額外輸出 review artifact，例如：
 - `bash "$SKILL_DIR/gen-openapi.sh" --candidate-file docs/api-docs/candidates/<timestamp>.confirmed.json --review-file docs/api-docs/reviews/openapi-review.<timestamp>.json`
-10. review artifact 至少要包含：
+11. review artifact 至少要包含：
 - `unresolved_validation_rules`
 - `unresolved_response_shape`
 - `unresolved_security`
 - `low_confidence_examples`
-11. 若 review artifact 的 `review_item_count > 0`，必須先經使用者/LLM review 後，才能進 Step 7。
-12. review decision 可用：
+12. 若 review artifact 的 `review_item_count > 0`，必須先經使用者/LLM review 後，才能進 Step 7。
+13. review decision 可用：
 - `bash "$SKILL_DIR/confirm-openapi-review.sh" --input docs/api-docs/reviews/openapi-review.<timestamp>.json --accept-all --output docs/api-docs/reviews/<timestamp>.approved.json`
-13. 目前 review decision 的最小契約是：每個 unresolved item 都必須被明確 accept，未被 accept 前不得 upload。
-14. `updated` endpoint 的 enrich 目標：
+14. 目前 review decision 的最小契約是：每個 unresolved item 都必須被明確 accept，未被 accept 前不得 upload。
+15. `updated` endpoint 的 enrich 目標：
 - request input schema 應優先反映常見 Laravel request validation rule，不限於 FormRequest，也包含 controller action 內的 inline validation；至少包含 `nullable`、`string`、`integer`、`numeric`、`boolean`、`array`、`min`、`max`、`between`、`size`、`digits`、`email`、`date`、`in`
 - 應支援 Laravel 常見 array-style rules，且不得因 rule 寫法不同而漏掉欄位
 - 應將 dotted fields 與 wildcard fields（例如 `profile.name`、`items.*.id`）轉成真正的 nested object / array schema，不得平鋪成原始欄位名

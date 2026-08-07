@@ -270,7 +270,9 @@ final class Analyzer
 
             $methodParts = explode('|', (string) ($route['method'] ?? 'GET'));
             $methodParts = array_values(array_filter(array_map('strtoupper', $methodParts), static fn (string $method): bool => !in_array($method, ['HEAD', 'OPTIONS'], true)));
-            $method = strtolower($methodParts[0] ?? 'GET');
+            if ($methodParts === []) {
+                $methodParts = ['GET'];
+            }
             $action = (string) ($route['action'] ?? '');
             $controller = '';
             $methodName = '';
@@ -278,12 +280,14 @@ final class Analyzer
                 [$controller, $methodName] = explode('@', $action, 2);
             }
 
-            $routes[] = new RouteEntry(
-                method: $method,
-                path: $path,
-                controller: $controller,
-                action: $methodName,
-            );
+            foreach ($methodParts as $method) {
+                $routes[] = new RouteEntry(
+                    method: strtolower($method),
+                    path: $path,
+                    controller: $controller,
+                    action: $methodName,
+                );
+            }
         }
 
         return new RouteIndex($routes);

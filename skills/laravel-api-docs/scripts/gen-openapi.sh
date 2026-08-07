@@ -63,6 +63,10 @@ php_event_adapter() {
         detail="$(echo "$line" | jq -r '.detail.detail // ""' 2>/dev/null || true)"
         guided_timing_record "gen-openapi" "$stage" "$duration_ms" "$detail"
         ;;
+      warning)
+        message="$(echo "$line" | jq -r '.message // ""' 2>/dev/null || true)"
+        echo "⚠️  $message" >&2
+        ;;
       *)
         echo "$line" >&2
         ;;

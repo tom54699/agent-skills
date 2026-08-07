@@ -164,7 +164,9 @@ final class OpenApiGenerator
 
             $methodParts = explode('|', (string) ($route['method'] ?? 'GET'));
             $methodParts = array_values(array_filter(array_map('strtoupper', $methodParts), static fn (string $method): bool => !in_array($method, ['HEAD', 'OPTIONS'], true)));
-            $method = $methodParts[0] ?? 'GET';
+            if ($methodParts === []) {
+                $methodParts = ['GET'];
+            }
             $action = (string) ($route['action'] ?? '');
             $controller = '';
             $methodName = '';
@@ -172,14 +174,16 @@ final class OpenApiGenerator
                 [$controller, $methodName] = explode('@', $action, 2);
             }
 
-            $routes[] = new RouteDefinition(
-                method: strtoupper($method),
-                path: $path,
-                name: (string) ($route['name'] ?? ''),
-                controller: $controller,
-                action: $methodName,
-                middleware: array_values(array_map('strval', $route['middleware'] ?? [])),
-            );
+            foreach ($methodParts as $method) {
+                $routes[] = new RouteDefinition(
+                    method: $method,
+                    path: $path,
+                    name: (string) ($route['name'] ?? ''),
+                    controller: $controller,
+                    action: $methodName,
+                    middleware: array_values(array_map('strval', $route['middleware'] ?? [])),
+                );
+            }
         }
 
         $this->timingDetails['route_snapshot'] = sprintf('routes=%d', count($routes));
@@ -260,6 +264,22 @@ final class OpenApiGenerator
             }
             $routes[] = $route;
             unset($missing[$key]);
+        }
+
+        if ($missing !== []) {
+            $missingList = array_map(
+                static function (string $key): string {
+                    [$method, $path] = explode(' ', $key, 2);
+                    return strtoupper($method) . ' ' . $path;
+                },
+                array_keys($missing)
+            );
+            sort($missingList);
+            $this->events->warning(sprintf(
+                '%d 筆已確認候選找不到對應的 route，不會寫入 OpenAPI：%s',
+                count($missingList),
+                implode(', ', $missingList)
+            ));
         }
 
         $this->events->progress('candidate_normalization', 1, 1, 'candidate normalization ready');

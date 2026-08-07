@@ -52,6 +52,19 @@ final class EventEmitter
         ]);
     }
 
+    /**
+     * Always emitted regardless of $enabled/$debug — used for conditions the
+     * caller must not silently lose in progress/timing noise.
+     */
+    public function warning(string $message, array $context = []): void
+    {
+        $this->emit([
+            'type' => 'warning',
+            'message' => $message,
+            'context' => $context,
+        ]);
+    }
+
     private function emit(array $payload): void
     {
         fwrite(STDERR, json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . PHP_EOL);
