@@ -17,6 +17,8 @@
     "skills/ai-project-index/scripts/*.py",
     "skills/business-logic-workflow/SKILL.md",
     "skills/development-workflow/SKILL.md",
+    "skills/knowledge-platform-dev/SKILL.md",
+    "skills/knowledge-platform-dev/references/*.md",
     "skills/development-workflow/assets/*.md",
     "openspec/specs/*.md",
     "docs/*.md",

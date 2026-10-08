@@ -16,6 +16,7 @@
 npx skills add tom54699/agent-skills --skill development-workflow
 npx skills add tom54699/agent-skills --skill laravel-api-docs
 npx skills add tom54699/agent-skills --skill business-logic-workflow
+npx skills add tom54699/agent-skills --skill knowledge-platform-dev
 ```
 
 常見變體：
@@ -91,6 +92,17 @@ npx skills update laravel-api-docs -p
 位置：`skills/business-logic-workflow`
 
 用來引導 AI 與使用者在需求單討論、舊功能理解、重構前調查或新舊邏輯比較時，整理 scoped Business Logic Brief、As-Is、To-Be、Delta、證據與不確定點。它不是自動文件產生器，也不要求先有 OpenSpec；只有使用者明確要求保存時，才討論長期文件落點。
+
+### `knowledge-platform-dev`
+
+位置：`skills/knowledge-platform-dev`
+
+讓 AI 以 Platform Engineer 的角色，建置與維護一個以「獨立 HTML Artifact」為知識單元的個人 Knowledge Platform（搜尋、tag、分享連結、公開頁面）。
+
+- 內附 v1 架構藍圖（`references/architecture-blueprint.md`）：兩個 hostname 分離管理介面與 artifact 內容、Astro SSR、Go modular monolith、PostgreSQL、X-Accel-Redirect、密碼 + TOTP 登入、Agent 用 PAT
+- 藍圖是**建議預設**：建置前會先盤點 server 既有環境（反向代理、PostgreSQL、Redis 等），提出建置計畫並經使用者確認
+- 平台建置後，以平台 repo 的 `docs/architecture.md` 為準
+- 只負責平台本身；把討論整理成 artifact、分享或公開內容，不在這個 skill 的範圍
 
 ## 參考與致謝
 

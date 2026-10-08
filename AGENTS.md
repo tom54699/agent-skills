@@ -70,7 +70,8 @@ Agent-Skills/
 │   │   └── scripts/              # Shell 腳本（progress-lib.sh 等）
 │   ├── ai-project-index/         # AI 專案索引 skill
 │   ├── business-logic-workflow/  # 業務邏輯理解 workflow skill
-│   └── development-workflow/     # 新專案初始化與開發流程統合 skill
+│   ├── development-workflow/     # 新專案初始化與開發流程統合 skill
+│   └── knowledge-platform-dev/   # 個人 Knowledge Platform 建置與維護 skill
 │
 ├── .codex/skills/                # OpenSpec workflow skills（流程控制）
 │   ├── openspec-explore/         # 探索模式：思考問題，不實作
@@ -127,6 +128,16 @@ Agent-Skills/
 | 1 | `skills/business-logic-workflow/SKILL.md` | 需求單 brief、舊邏輯 As-Is、As-Is/To-Be/Delta 與保存決策流程 |
 
 業務邏輯理解流程不要求專案採用 DDD 架構，也不要求先有 OpenSpec。需求單、舊功能調查或重構前，應先確認 scope、證據與不確定點；只有使用者明確要求保存時，才更新長期文件。未確認內容不得寫成已確認事實。
+
+### 建置與維護 Knowledge Platform
+
+| 順序 | 檔案 | 說明 |
+|------|------|------|
+| 1 | `skills/knowledge-platform-dev/SKILL.md` | 角色與邊界、Bootstrap / Change 模式、開發與安全規則、部署銜接 |
+| 2 | `skills/knowledge-platform-dev/references/architecture-blueprint.md` | v1 架構藍圖（建議預設，含備案與架構決策記錄） |
+| 3 | `skills/knowledge-platform-dev/references/portable-artifact-format.md` | 匯入與備份共用的 artifact 格式 |
+
+藍圖是建議預設，不是強制規格；建置前要先盤點環境並和使用者確認。平台建置後，以平台 repo 的 `docs/architecture.md` 為準。
 
 ---
 

@@ -6,6 +6,7 @@
 - `skills/ai-project-index/`
 - `skills/business-logic-workflow/`
 - `skills/development-workflow/`
+- `skills/knowledge-platform-dev/`
 
 ## 建議安裝方式
 
@@ -15,6 +16,7 @@
 npx skills add tom54699/agent-skills --skill development-workflow
 npx skills add tom54699/agent-skills --skill laravel-api-docs
 npx skills add tom54699/agent-skills --skill business-logic-workflow
+npx skills add tom54699/agent-skills --skill knowledge-platform-dev
 ```
 
 常見延伸形式：
@@ -53,6 +55,13 @@ npx skills add tom54699/agent-skills --skill laravel-api-docs --global
 - 位置：`skills/business-logic-workflow`
 - 用途：整理需求單 Business Logic Brief、舊邏輯 As-Is、As-Is/To-Be/Delta、證據與不確定點
 - 文件目錄：不預設初始化固定目錄；只有使用者明確要求保存時才討論長期文件落點
+
+### `knowledge-platform-dev`
+
+- 位置：`skills/knowledge-platform-dev`
+- 用途：建置與維護以獨立 HTML Artifact 為知識單元的個人 Knowledge Platform
+- 參考文件：`references/architecture-blueprint.md`（v1 架構藍圖，建議預設）、`references/portable-artifact-format.md`（匯入與備份格式）
+- 注意：建置前會先盤點部署環境並和使用者確認；平台建置後以平台 repo 的 `docs/architecture.md` 為準
 
 ## 更新提醒現況
 
