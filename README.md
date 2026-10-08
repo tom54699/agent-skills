@@ -17,6 +17,7 @@ npx skills add tom54699/agent-skills --skill development-workflow
 npx skills add tom54699/agent-skills --skill laravel-api-docs
 npx skills add tom54699/agent-skills --skill business-logic-workflow
 npx skills add tom54699/agent-skills --skill knowledge-platform-dev
+npx skills add tom54699/agent-skills --skill knowledge-artifact
 ```
 
 常見變體：
@@ -103,6 +104,17 @@ npx skills update laravel-api-docs -p
 - 藍圖是**建議預設**：建置前會先盤點 server 既有環境（反向代理、PostgreSQL、Redis 等），提出建置計畫並經使用者確認
 - 平台建置後，以平台 repo 的 `docs/architecture.md` 為準
 - 只負責平台本身；把討論整理成 artifact、分享或公開內容，不在這個 skill 的範圍
+
+### `knowledge-artifact`
+
+位置：`skills/knowledge-artifact`
+
+讓 AI 和你一起把技術主題或一段討論做成獨立的 HTML 說明，再存進 Knowledge Platform。在任何專案裡說「把這個整理進知識庫」就會啟動。
+
+- 流程：先提出大綱與呈現方式 → 在本機 `~/knowledge-artifacts/<slug>/` 產生 → 預覽 → 依回饋修改 → 你確認後才上傳
+- 每篇依主題自由設計，沒有共用版型；只要求淺色 / 深色都能讀、手機可讀、可單獨開啟、不載入外部 JS、secret 換成假值
+- 只透過平台 API 操作，需要設定環境變數 `KB_BASE_URL`、`KB_API_TOKEN`（在平台管理介面產生 PAT）；平台還沒上線時，草稿會留在本機
+- 新內容預設只有你看得到；公開、分享、刪除只依你的明確指令
 
 ## 參考與致謝
 

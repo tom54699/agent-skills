@@ -73,7 +73,8 @@ Agent-Skills/
 │   ├── ai-project-index/         # AI 專案索引 skill
 │   ├── business-logic-workflow/  # 業務邏輯理解 workflow skill
 │   ├── development-workflow/     # 新專案初始化與開發流程統合 skill
-│   └── knowledge-platform-dev/   # 個人 Knowledge Platform 建置與維護 skill
+│   ├── knowledge-platform-dev/   # 個人 Knowledge Platform 建置與維護 skill
+│   └── knowledge-artifact/       # 技術主題 → HTML 說明 → 上傳平台的 skill
 │
 ├── .codex/skills/                # OpenSpec workflow skills（流程控制）
 │   ├── openspec-explore/         # 探索模式：思考問題，不實作
@@ -142,6 +143,16 @@ Agent-Skills/
 | 3 | [skills/knowledge-platform-dev/references/portable-artifact-format.md](skills/knowledge-platform-dev/references/portable-artifact-format.md) | 匯入與備份共用的 artifact 格式 |
 
 藍圖是建議預設，不是強制規格；建置前要先盤點環境並和使用者確認。平台建置後，以平台 repo 的 `docs/architecture.md` 為準。
+
+### 製作與管理知識 Artifact
+
+| 順序 | 檔案 | 說明 |
+|------|------|------|
+| 1 | [skills/knowledge-artifact/SKILL.md](skills/knowledge-artifact/SKILL.md) | 共同製作流程（提案 → 本機預覽 → 修改 → 確認後上傳）、存取設定與刪除規則 |
+| 2 | [skills/knowledge-artifact/references/artifact-authoring.md](skills/knowledge-artifact/references/artifact-authoring.md) | 依內容類型的呈現方式、技術與安全要求、檢查清單 |
+| 3 | [skills/knowledge-artifact/references/platform-operations.md](skills/knowledge-artifact/references/platform-operations.md) | 平台 API 操作對照、curl 範例、錯誤處理 |
+
+`references/portable-artifact-format.md` 和 `knowledge-platform-dev` 的那份內容必須完全相同，修改時兩份一起更新。
 
 ---
 

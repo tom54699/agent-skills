@@ -19,6 +19,8 @@
     "skills/development-workflow/SKILL.md",
     "skills/knowledge-platform-dev/SKILL.md",
     "skills/knowledge-platform-dev/references/*.md",
+    "skills/knowledge-artifact/SKILL.md",
+    "skills/knowledge-artifact/references/*.md",
     "skills/development-workflow/assets/*.md",
     "openspec/specs/*.md",
     "docs/*.md",
