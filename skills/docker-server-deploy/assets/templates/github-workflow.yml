@@ -1,0 +1,146 @@
+# .github/workflows/deploy.yml — docker-server-deploy template v1
+#
+# 流程：test → build（每個 image 一個 job）→ deploy（同步到新的 release 目錄並執行 deploy.sh）
+#
+# 建立部署時替換：
+#   __OWNER__ / __PROJECT__   image 名稱（GHCR 要小寫）
+#   runs-on                   build 的 runner 要和 server 的 CPU 架構一致（ARM server 用 ubuntu-24.04-arm）
+#   platforms                 只建 server 需要的架構，有需求才建多架構
+#   test job                  換成專案的 lint / test / migration 檢查
+#   matrix                    換成專案的 image 與 Dockerfile
+#   action 版本               使用前依目標環境確認，不要把範本的版本當成永久指定
+#
+# Repository variables：
+#   DEPLOY_ENABLED            設成 true 才會部署；沒設定時只顯示「未啟用 CD」
+#
+# Repository secrets（DEPLOY_ENABLED 為 true 時全部必填，缺一個就讓部署失敗）：
+#   DEPLOY_HOST               server 位址
+#   DEPLOY_USER               SSH 使用者
+#   DEPLOY_ROOT               server 上的部署根目錄，例如 /srv/<project>
+#   DEPLOY_SSH_KEY            部署專用的 SSH 私鑰
+#   DEPLOY_KNOWN_HOSTS        預先驗證過的 host key（ssh-keyscan 輸出、並和 server 上的指紋比對過）
+
+name: Build and deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  RELEASE_TAG: sha-${{ github.sha }}
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      # 換成專案的檢查，例如：
+      # - run: npm ci && npm run lint && npm test
+      #   working-directory: frontend
+      # - run: go test ./...
+      #   working-directory: backend
+      # migration 檢查：起一個 postgres service，對空資料庫跑一次 migration
+      - run: echo "Replace with project checks" && exit 1
+
+  build:
+    needs: test
+    runs-on: ubuntu-24.04-arm   # 和 server 的 CPU 架構一致
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - name: api
+            image: __OWNER__/__PROJECT__-api
+            dockerfile: backend/Dockerfile
+          - name: web
+            image: __OWNER__/__PROJECT__-web
+            dockerfile: frontend/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/arm64   # 和 server 的 CPU 架構一致
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ matrix.image }}:latest
+            ${{ env.REGISTRY }}/${{ matrix.image }}:${{ env.RELEASE_TAG }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  deploy-disabled:
+    needs: build
+    if: github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED != 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "::notice::CD 未啟用：把 repository variable DEPLOY_ENABLED 設成 true 才會部署"
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    # 部署排隊執行，新的 run 不會取消進行中的部署；server 端另外有部署鎖
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_ROOT: ${{ secrets.DEPLOY_ROOT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check deployment secrets
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          missing=""
+          for name in DEPLOY_HOST DEPLOY_USER DEPLOY_ROOT DEPLOY_SSH_KEY DEPLOY_KNOWN_HOSTS; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::DEPLOY_ENABLED 是 true，但缺少 secrets:$missing"
+            exit 1
+          fi
+
+      - name: Prepare SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Upload release files
+        run: |
+          ssh_cmd="ssh -i $HOME/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
+          release_dir="$DEPLOY_ROOT/releases/$RELEASE_TAG"
+          rsync -az -e "$ssh_cmd" \
+            --rsync-path="mkdir -p '$release_dir' && rsync" \
+            deploy/ "$DEPLOY_USER@$DEPLOY_HOST:$release_dir/"
+
+      - name: Deploy
+        run: |
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "bash '$DEPLOY_ROOT/releases/$RELEASE_TAG/deploy.sh' '$RELEASE_TAG'"

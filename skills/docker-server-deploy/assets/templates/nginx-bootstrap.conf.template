@@ -1,0 +1,22 @@
+# nginx-bootstrap.conf.template — docker-server-deploy template v1
+#
+# 第一次申請 TLS 憑證用：只開 HTTP，讓 certbot 用 webroot 完成驗證。
+# 拿到憑證後換成 nginx.conf.template。流程見 references/first-certificate.md。
+#
+#   export DOMAIN="$(sed -n 's/^DOMAIN=//p' <DEPLOY_ROOT>/shared/.env)"
+#   envsubst '${DOMAIN}' < nginx-bootstrap.conf.template \
+#     | sudo tee /etc/nginx/sites-available/<project>.conf > /dev/null
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${DOMAIN};
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 404;
+    }
+}

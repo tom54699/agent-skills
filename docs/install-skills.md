@@ -8,6 +8,7 @@
 - `skills/development-workflow/`
 - `skills/knowledge-platform-dev/`
 - `skills/knowledge-artifact/`
+- `skills/docker-server-deploy/`
 
 ## 建議安裝方式
 
@@ -19,6 +20,7 @@ npx skills add tom54699/agent-skills --skill laravel-api-docs
 npx skills add tom54699/agent-skills --skill business-logic-workflow
 npx skills add tom54699/agent-skills --skill knowledge-platform-dev
 npx skills add tom54699/agent-skills --skill knowledge-artifact
+npx skills add tom54699/agent-skills --skill docker-server-deploy
 ```
 
 常見延伸形式：
@@ -72,6 +74,14 @@ npx skills add tom54699/agent-skills --skill laravel-api-docs --global
 - 參考文件：`references/platform-operations.md`（API 操作與 curl 範例）、`references/artifact-authoring.md`（製作指引與檢查清單）、`references/portable-artifact-format.md`（本機草稿格式）
 - 設定：環境變數 `KB_BASE_URL`、`KB_API_TOKEN`；沒設定或平台連不上時，草稿留在 `~/knowledge-artifacts/<slug>/`
 - 安裝建議：日常在各專案都會用到，適合裝在全域（`--global`）
+
+### `docker-server-deploy`
+
+- 位置：`skills/docker-server-deploy`
+- 用途：用 Docker Compose、container registry 與 CI/CD 把專案部署到 Linux server；首次建置、修改部署、操作與排查
+- 範本：`assets/templates/`（workflow、`deploy.sh`、`docker-compose.yml`、Nginx、`env.example`）
+- 參考文件：`references/`（第一次申請憑證、migration 與回滾、可選模組、Oracle Cloud、部署紀錄、和參考專案的差異）
+- 測試：`tests/docker-server-deploy/run-tests.sh`（模擬）、`tests/docker-server-deploy/integration-test.sh`（需要 Docker，發佈前執行）
 
 ## 更新提醒現況
 

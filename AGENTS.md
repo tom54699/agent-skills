@@ -72,7 +72,8 @@ Agent-Skills/
 │   ├── business-logic-workflow/  # 業務邏輯理解 workflow skill
 │   ├── development-workflow/     # 新專案初始化與開發流程統合 skill
 │   ├── knowledge-platform-dev/   # 個人 Knowledge Platform 建置與維護 skill
-│   └── knowledge-artifact/       # 技術主題 → HTML 說明 → 上傳平台的 skill
+│   ├── knowledge-artifact/       # 技術主題 → HTML 說明 → 上傳平台的 skill
+│   └── docker-server-deploy/     # Docker Compose + registry + CI/CD 部署到 Linux server 的 skill
 │
 ├── .codex/skills/                # OpenSpec workflow skills（流程控制）
 │   ├── openspec-explore/         # 探索模式：思考問題，不實作
@@ -149,6 +150,17 @@ Agent-Skills/
 | 3 | `skills/knowledge-artifact/references/platform-operations.md` | 平台 API 操作對照、curl 範例、錯誤處理 |
 
 `references/portable-artifact-format.md` 和 `knowledge-platform-dev` 的那份內容必須完全相同，修改時兩份一起更新。
+
+### 部署到 Linux Server
+
+| 順序 | 檔案 | 說明 |
+|------|------|------|
+| 1 | `skills/docker-server-deploy/SKILL.md` | 三種模式、授權範圍、部署紀錄與敏感資訊規則、各階段規則 |
+| 2 | `skills/docker-server-deploy/assets/templates/deploy.sh` | release 目錄、部署鎖、migration、health check、自動回滾 |
+| 3 | `skills/docker-server-deploy/assets/templates/github-workflow.yml` | test → build → 依序部署 |
+| 4 | `tests/docker-server-deploy/run-tests.sh` | `deploy.sh` 的模擬測試（修改 `deploy.sh` 後必跑） |
+
+修改 `deploy.sh` 範本後要跑 `bash tests/docker-server-deploy/run-tests.sh`；發佈前在有 Docker daemon 的環境再跑 `bash tests/docker-server-deploy/integration-test.sh`。範本要相容 bash 3.2。
 
 ---
 

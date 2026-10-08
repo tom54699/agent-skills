@@ -18,6 +18,7 @@ npx skills add tom54699/agent-skills --skill laravel-api-docs
 npx skills add tom54699/agent-skills --skill business-logic-workflow
 npx skills add tom54699/agent-skills --skill knowledge-platform-dev
 npx skills add tom54699/agent-skills --skill knowledge-artifact
+npx skills add tom54699/agent-skills --skill docker-server-deploy
 ```
 
 常見變體：
@@ -115,6 +116,18 @@ npx skills update laravel-api-docs -p
 - 每篇依主題自由設計，沒有共用版型；只要求淺色 / 深色都能讀、手機可讀、可單獨開啟、不載入外部 JS、secret 換成假值
 - 只透過平台 API 操作，需要設定環境變數 `KB_BASE_URL`、`KB_API_TOKEN`（在平台管理介面產生 PAT）；平台還沒上線時，草稿會留在本機
 - 新內容預設只有你看得到；公開、分享、刪除只依你的明確指令
+
+### `docker-server-deploy`
+
+位置：`skills/docker-server-deploy`
+
+把專案透過 Docker Compose、container registry 與 CI/CD 部署到自己的 Linux server。分成首次建置、修改部署、操作與排查三種模式。
+
+- 範本：GitHub Actions workflow（test → 各自建 image → 依序部署）、`deploy.sh`、`docker-compose.yml`、Nginx server block（含第一次申請憑證用的 bootstrap）、`.env.example`
+- `deploy.sh`：每次部署放在獨立的 release 目錄、部署鎖、固定 `sha-<commit>` 版本、部署前獨立跑 migration、驗證新版本與外部 HTTPS、失敗自動回滾、手動 `rollback`
+- 第一次 SSH 前會先問；變更只照你確認過的計畫；刪資料、改防火牆、動到共用服務一律另外確認
+- 網域、host、server 路徑不進 git；部署紀錄存在本機，要共用時用 SOPS + age 加密
+- 測試：`bash tests/docker-server-deploy/run-tests.sh`（模擬，不需要 Docker）；發佈前另外執行 `bash tests/docker-server-deploy/integration-test.sh`（需要 Docker daemon）
 
 ## 參考與致謝
 

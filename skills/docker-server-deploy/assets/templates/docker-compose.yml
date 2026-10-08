@@ -1,0 +1,81 @@
+# docker-compose.yml — docker-server-deploy template v1
+#
+# 建立部署時替換：
+#   __PROJECT__   專案名稱（compose 專案名、volume 與 network 名稱的前綴）
+#   __OWNER__     registry 的 owner（GHCR 要小寫）
+#   服務名稱、port、health 路徑、migration 指令依專案調整
+#   image 版本（postgres 等第三方 image）使用前依目標環境確認
+#
+# 執行時：
+#   RELEASE_TAG 由 deploy.sh 提供（sha-<commit>），前後端用同一個 tag
+#   其他設定來自 server 上的 <DEPLOY_ROOT>/shared/.env（deploy.sh 用 --env-file 帶入）
+#
+# 固定 name，不同 release 目錄才會被視為同一個 compose 專案。
+# 持久資料只用固定名稱的 named volume，或 shared/ 底下的絕對路徑。
+name: __PROJECT__
+
+services:
+  api:
+    image: ghcr.io/__OWNER__/__PROJECT__-api:${RELEASE_TAG:?RELEASE_TAG is required}
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Taipei}
+      APP_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    volumes:
+      - app_data:/app/data
+    networks:
+      - app
+    healthcheck:
+      # image 裡要有 wget 或 curl；沒有的話改用語言本身（例如 python -c "import urllib.request; ..."）
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  web:
+    image: ghcr.io/__OWNER__/__PROJECT__-web:${RELEASE_TAG:?RELEASE_TAG is required}
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Taipei}
+      NODE_ENV: production
+      API_INTERNAL_URL: http://api:8000
+    ports:
+      - "127.0.0.1:${WEB_PORT:-3000}:3000"
+    networks:
+      - app
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # 一次性 migration：deploy.sh 在切換服務前執行，失敗就中止部署
+  # 和 api 用同一個 image，只換 command；api 的 CMD 不要再跑 migration
+  migrate:
+    image: ghcr.io/__OWNER__/__PROJECT__-api:${RELEASE_TAG:?RELEASE_TAG is required}
+    profiles: ["jobs"]
+    restart: "no"
+    command: ["alembic", "upgrade", "head"]   # 換成專案的 migration 指令
+    environment:
+      TZ: ${TZ:-Asia/Taipei}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+    networks:
+      - app
+
+volumes:
+  app_data:
+    name: __PROJECT___app_data
+
+networks:
+  app:
+    name: __PROJECT___app
+
+# 可選模組（共享 PostgreSQL、Redis、向量資料庫、一次性同步 job）見 references/optional-modules.md
