@@ -21,13 +21,10 @@ DEFAULT_CONFIG = {
     ],
     "expectedCoverage": [
         "skills/laravel-api-docs/SKILL.md",
-        "skills/laravel-api-docs/bin/infer-candidates.php",
-        "skills/laravel-api-docs/bin/gen-openapi.php",
-        "skills/laravel-api-docs/src/InferCandidates/Analyzer.php",
-        "skills/laravel-api-docs/src/OpenApiGenerator/OpenApiGenerator.php",
+        "skills/laravel-api-docs/scripts/*.sh",
         "openspec/specs/*.md",
         "docs/*.md",
-        "tests/*.php",
+        "tests/laravel-api-docs/*.sh",
         ".codex/skills/openspec-*/SKILL.md",
         "AGENTS.md",
         "CLAUDE.md"

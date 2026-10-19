@@ -63,13 +63,11 @@ The test: Every changed line should trace directly to the user's request.
 ```
 Agent-Skills/
 ├── skills/
-│   ├── laravel-api-docs/         # Laravel API 文件同步 skill（主要業務邏輯）
+│   ├── laravel-api-docs/         # Laravel 開發收尾 skill（OpenAPI → Apidog → Redoc → Jira）
 │   │   ├── SKILL.md              # ★ Skill 規格入口，閱讀順序第一
-│   │   ├── bin/                  # PHP 執行入口（infer-candidates.php, gen-openapi.php）
-│   │   ├── src/                  # PHP 分析器 / 生成器原始碼
-│   │   │   ├── InferCandidates/  # 候選 API 推測模組
-│   │   │   └── OpenApiGenerator/ # OpenAPI 生成模組
-│   │   └── scripts/              # Shell 腳本（progress-lib.sh 等）
+│   │   ├── scripts/              # Apidog 匯出／資料夾／上傳腳本與 gen-html.sh
+│   │   ├── references/           # conventions.md 與 business.md 範本
+│   │   └── bin/                  # render-markdown.php（首頁 markdown 轉 HTML）
 │   ├── ai-project-index/         # AI 專案索引 skill
 │   ├── business-logic-workflow/  # 業務邏輯理解 workflow skill
 │   ├── development-workflow/     # 新專案初始化與開發流程統合 skill
@@ -105,17 +103,19 @@ Agent-Skills/
 
 `development-workflow` 是薄層流程入口，用來決定何時使用 `business-logic-workflow`、OpenSpec workflow skills 與 `.ai-project-index`；它不取代這些 specialized skills。
 
-### 理解 Laravel API 文件同步功能
+### 理解 Laravel 開發收尾功能
 
 閱讀順序（由上至下）：
 
 | 順序 | 檔案 | 說明 |
 |------|------|------|
-| 1 | [skills/laravel-api-docs/SKILL.md](skills/laravel-api-docs/SKILL.md) | Skill 規格全文，包含完整流程（Step 1–9） |
-| 2 | [skills/laravel-api-docs/bin/infer-candidates.php](skills/laravel-api-docs/bin/infer-candidates.php) | 候選推測執行入口 |
-| 3 | [skills/laravel-api-docs/bin/gen-openapi.php](skills/laravel-api-docs/bin/gen-openapi.php) | OpenAPI 生成執行入口 |
-| 4 | `skills/laravel-api-docs/src/InferCandidates/` | 候選推測模組實作 |
-| 5 | `skills/laravel-api-docs/src/OpenApiGenerator/` | OpenAPI 生成模組實作 |
+| 1 | [skills/laravel-api-docs/SKILL.md](skills/laravel-api-docs/SKILL.md) | Skill 規格全文，包含完整流程（Step 0–6） |
+| 2 | [skills/laravel-api-docs/scripts/upload-apidog.sh](skills/laravel-api-docs/scripts/upload-apidog.sh) | 上傳前檢查、依資料夾分批上傳、上傳後驗證 |
+| 3 | [skills/laravel-api-docs/scripts/apidog-lib.sh](skills/laravel-api-docs/scripts/apidog-lib.sh) | 共用函式：憑證、Apidog 請求、components 修剪、API tree 攤平 |
+| 4 | [skills/laravel-api-docs/scripts/export-remote.sh](skills/laravel-api-docs/scripts/export-remote.sh) | 帶 extensions 匯出既有 API |
+| 5 | [tests/laravel-api-docs/run-tests.sh](tests/laravel-api-docs/run-tests.sh) | 腳本的模擬測試（修改腳本後必跑） |
+
+修改 `skills/laravel-api-docs/scripts/` 後要跑 `bash tests/laravel-api-docs/run-tests.sh`。腳本要相容 bash 3.2。公司專屬的值（header、錯誤碼、Jira 設定）只放在 Laravel 專案的 `docs/api-docs/conventions.md`，不進本 repo。
 
 ### 理解 OpenSpec 流程
 
@@ -168,27 +168,24 @@ Agent-Skills/
 
 ---
 
-## Laravel API 文件 Skill 核心流程摘要
+## Laravel 開發收尾 Skill 核心流程摘要
 
 Skill 完整規格在 `skills/laravel-api-docs/SKILL.md`，以下為快速索引：
 
 | Step | 名稱 | 關鍵點 |
 |------|------|--------|
-| 1 | Preflight | 檢查 Laravel 環境、`.env.agents`、必要工具 |
-| 2 | 初始化分流 | 有/無 success history 走不同路徑；初始化需確認 `from_commit` 與 `path_strategy` |
-| 3 | 變更範圍收斂 | 優先 commit-based diff，fallback 才用時間窗 |
-| 4 | 候選 API 推測 | PHP analyzer 主路徑；強/弱訊號模型；結果寫入 `candidates/<timestamp>.json` |
-| 5 | 使用者確認清單 | LLM 主導互動；確認後寫 `candidates/<timestamp>.confirmed.json` |
-| 6 | 更新 OpenAPI | 依 confirmed 清單深度分析；含 review artifact 流程 |
-| 7 | 同步 Apidog | 上傳、衝突處理、post-upload 驗證、寫入 history |
-| 8 | 詢問是否產生 HTML | 詢問補充說明需求 |
-| 9 | 產生 Redoc HTML | `index.html`（入口）+ `api-docs.html`（純 Redoc） |
+| 0 | 讀取專案慣例 | `docs/api-docs/conventions.md`；不存在時從參考 API 匯出起草，使用者確認後存檔 |
+| 1 | 確認範圍 | git diff + `route:list` 提出本次 API，使用者確認；範圍外不處理 |
+| 2 | 撰寫 OpenAPI | AI 讀程式碼撰寫；既有 API 以 Apidog 遠端版本（含 extensions）為底，只改變動處 |
+| 3 | 上傳前確認 | 新 API 給摘要、既有 API 給 diff；決定 folder_id；使用者確認 |
+| 4 | 上傳 Apidog | 依資料夾分批、移除 `x-apidog-folder`、上傳後驗證路徑與資料夾 |
+| 5 | 產生 Redoc | `business.md`（目的、需求、業務邏輯、前端要改什麼）→ `index.html` + `api-docs.html` |
+| 6 | Jira 單 | 起草前端／後端單，使用者確認後用當下可用工具建立 |
 
-**重要規則（閱讀實作前必看）：**
-- `docs/api-docs/openapi.yaml` 是 Apidog 同步的唯一來源
-- 強訊號可直接產生候選；弱訊號（controller/service method body diff）必須搭配強訊號
-- `updated` 衝突預設 `keep_remote`；`missing_remote_endpoint` 為 non-blocking
-- post-upload 驗證失敗 → 整次同步視為失敗，不寫 success history
+**重要規則：**
+- 每次輸出一個新資料夾 `docs/api-docs/<YYYYMMDD>-<topic>/`，不讀寫舊輸出
+- method、path、是否需要認證取自 `route:list`，不推測
+- 上傳 Apidog 與建立 Jira 單前一定要使用者確認
 
 ---
 
@@ -211,17 +208,16 @@ Skill 完整規格在 `skills/laravel-api-docs/SKILL.md`，以下為快速索引
 
 ---
 
-## 目錄慣例（Laravel API Docs Skill 執行時）
+## 目錄慣例（Laravel 開發收尾 Skill 執行時，位於 Laravel 專案）
 
 | 路徑 | 用途 |
 |------|------|
-| `docs/api-docs/openapi.yaml` | OpenAPI 規格主檔（唯一同步來源） |
-| `docs/api-docs/history/apidog-sync-history.jsonl` | 同步歷史（Step 3 日常流程基準） |
-| `docs/api-docs/candidates/<timestamp>.json` | AI 推測候選清單 |
-| `docs/api-docs/candidates/<timestamp>.confirmed.json` | 使用者確認後的最終清單 |
-| `docs/api-docs/conflicts/<timestamp>.json` | Apidog 衝突清單 |
-| `docs/api-docs/reviews/openapi-review.<timestamp>.json` | OpenAPI unresolved review |
-| `docs/api-docs/reviews/<timestamp>.approved.json` | Review decision |
-| `docs/api-docs/redoc/index.html` | HTML 首頁（分享入口） |
-| `docs/api-docs/redoc/api-docs.html` | 純 Redoc API 文件頁 |
-| `docs/api-docs/redoc/extra.md` | HTML 補充說明（可選） |
+| `.env.agents` | `APIDOG_ACCESS_TOKEN`、`APIDOG_PROJECT_ID` |
+| `docs/api-docs/conventions.md` | 專案慣例（header、錯誤碼、命名、資料夾習慣等） |
+| `docs/api-docs/<YYYYMMDD>-<topic>/openapi.yaml` | 本次範圍的 spec（唯一上傳來源） |
+| `docs/api-docs/<YYYYMMDD>-<topic>/remote-base.json` | 範圍內既有 API 的遠端匯出 |
+| `docs/api-docs/<YYYYMMDD>-<topic>/upload-targets.json` | 上傳目標與 folder_id |
+| `docs/api-docs/<YYYYMMDD>-<topic>/business.md` | 首頁內容 |
+| `docs/api-docs/<YYYYMMDD>-<topic>/index.html` | 業務邏輯首頁 |
+| `docs/api-docs/<YYYYMMDD>-<topic>/api-docs.html` | 本次 API 的 Redoc 規格頁 |
+| `docs/api-docs/<YYYYMMDD>-<topic>/jira.md` | Jira 草稿 |

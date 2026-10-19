@@ -40,7 +40,7 @@ python3 skills/ai-project-index/scripts/audit-index.py
 AI 可以用 index 做 broad discovery：
 
 ```bash
-python3 skills/ai-project-index/scripts/query-index.py "query parameter"
+python3 skills/ai-project-index/scripts/query-index.py "apidog upload"
 ```
 
 適合先 query index 的情境：

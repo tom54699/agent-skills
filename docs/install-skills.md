@@ -45,8 +45,9 @@ npx skills add tom54699/agent-skills --skill laravel-api-docs --global
 ### `laravel-api-docs`
 
 - 位置：`skills/laravel-api-docs`
-- 用途：以 guided-sync 流程同步 Laravel API 文件、Apidog 與 HTML 輸出
-- 流程文件：`docs/laravel-api-docs-guided-sync.md`
+- 用途：Laravel 開發完成後的收尾流程：AI 撰寫 OpenAPI、上傳 Apidog 並驗證、產生業務邏輯首頁與 Redoc、起草並建立 Jira 單
+- 流程文件：`skills/laravel-api-docs/SKILL.md`
+- 專案端設定：`.env.agents`（Apidog 憑證）、`docs/api-docs/conventions.md`（專案慣例，範本見 `references/conventions-template.md`）
 
 ### `ai-project-index`
 

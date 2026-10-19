@@ -13,29 +13,27 @@ TOKEN_CHARS = 4
 
 CASES = [
     {
-        "id": "laravel-candidate-inference",
-        "query": "infer-candidates php bin analyzer",
+        "id": "laravel-apidog-upload",
+        "query": "apidog upload folder verify export remote",
         "expected": [
-            "skills/laravel-api-docs/bin/infer-candidates.php",
-            "skills/laravel-api-docs/src/InferCandidates/Analyzer.php",
+            "skills/laravel-api-docs/scripts/upload-apidog.sh",
+            "skills/laravel-api-docs/scripts/export-remote.sh",
         ],
         "direct": [
             "skills/laravel-api-docs/SKILL.md",
-            "skills/laravel-api-docs/bin/infer-candidates.php",
-            "skills/laravel-api-docs/src/InferCandidates/*.php",
+            "skills/laravel-api-docs/scripts/*.sh",
         ],
     },
     {
-        "id": "openapi-generation",
-        "query": "OpenAPI generator gen-openapi response analyzer",
+        "id": "laravel-redoc-home",
+        "query": "redoc business home page gen-html",
         "expected": [
-            "skills/laravel-api-docs/bin/gen-openapi.php",
-            "skills/laravel-api-docs/src/OpenApiGenerator/OpenApiGenerator.php",
+            "skills/laravel-api-docs/scripts/gen-html.sh",
         ],
         "direct": [
             "skills/laravel-api-docs/SKILL.md",
-            "skills/laravel-api-docs/bin/gen-openapi.php",
-            "skills/laravel-api-docs/src/OpenApiGenerator/*.php",
+            "skills/laravel-api-docs/scripts/gen-html.sh",
+            "skills/laravel-api-docs/references/*.md",
         ],
     },
     {
@@ -75,12 +73,12 @@ CASES = [
     },
     {
         "id": "tests",
-        "query": "query parameter generator tests",
+        "query": "apidog upload simulated tests fake curl",
         "expected": [
-            "tests/laravel_api_docs_query_parameters_test.php",
+            "tests/laravel-api-docs/run-tests.sh",
         ],
         "direct": [
-            "tests/*.php",
+            "tests/laravel-api-docs/*.sh",
         ],
     },
     {

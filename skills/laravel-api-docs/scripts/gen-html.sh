@@ -1,139 +1,92 @@
 #!/bin/bash
 set -euo pipefail
 
-# 產出互動式 HTML 文件（Redoc，多頁版）
-# 預設：
-# - 輸入：docs/api-docs/openapi.yaml（若不存在且 docs/openapi.yaml 存在則回退）
-# - 輸出：docs/api-docs/redoc/index.html 與 docs/api-docs/redoc/api-docs.html
+# 產出本次的 Redoc 文件：
+# - index.html：業務邏輯首頁（由 business.md 產生）
+# - api-docs.html：本次 API 的 Redoc 規格頁
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/progress-lib.sh"
-
-OPENAPI_FILE="docs/api-docs/openapi.yaml"
-DEFAULT_OUTPUT_FILE="docs/api-docs/redoc/api-docs.html"
-OUTPUT_FILE="$DEFAULT_OUTPUT_FILE"
-EXTRA_FILE="docs/api-docs/redoc/extra.md"
-VERSION_ROOT="docs/api-docs/versions"
-WITH_EXTRA=false
-PROGRESS_ENABLED=1
-GUIDED_TIMING_FILE="$(mktemp)"
 MARKDOWN_RENDERER="$SCRIPT_DIR/../bin/render-markdown.php"
-VERSION_DIR=""
-VERSION_EXTRA_FILE=""
-EXTRA_RENDER_FILE=""
+
+OPENAPI_FILE=""
+BUSINESS_FILE=""
+OUTPUT_DIR=""
 
 usage() {
   cat <<'USAGE'
-Usage: gen-html.sh [options]
+Usage: gen-html.sh --openapi FILE --business-md FILE --output-dir DIR
 
 Options:
-  --openapi FILE   OpenAPI YAML file path
-  --output FILE    API reference HTML path (default: docs/api-docs/redoc/api-docs.html)
-  --with-extra     Render docs/api-docs/redoc/extra.md into the summary home page
-  --extra-file FILE  Override extra markdown file path
-  --no-progress    Disable progress output
-  -h, --help       Show help
+  --openapi FILE      本次的 spec（YAML 或 JSON）
+  --business-md FILE  首頁內容（目的、需求、業務邏輯、前端要改什麼）
+  --output-dir DIR    輸出資料夾，產出 index.html 與 api-docs.html
+  -h, --help          Show help
 USAGE
 }
 
-create_version_dir() {
-  local version_id
-  local candidate
-  local counter
-
-  version_id="$(date '+%Y%m%d-%H%M%S')"
-  candidate="$VERSION_ROOT/$version_id"
-  counter=2
-
-  while [ -e "$candidate" ]; do
-    candidate="$VERSION_ROOT/${version_id}-${counter}"
-    counter=$((counter + 1))
-  done
-
-  mkdir -p "$candidate/redoc"
-  printf '%s' "$candidate"
+fail() {
+  echo "錯誤：$*" >&2
+  exit 1
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --openapi)
+      [ $# -ge 2 ] || fail "--openapi 需要值"
       OPENAPI_FILE="$2"
       shift 2
       ;;
-    --output)
-      OUTPUT_FILE="$2"
+    --business-md)
+      [ $# -ge 2 ] || fail "--business-md 需要值"
+      BUSINESS_FILE="$2"
       shift 2
       ;;
-    --with-extra)
-      WITH_EXTRA=true
-      shift
-      ;;
-    --extra-file)
-      EXTRA_FILE="$2"
-      WITH_EXTRA=true
+    --output-dir)
+      [ $# -ge 2 ] || fail "--output-dir 需要值"
+      OUTPUT_DIR="$2"
       shift 2
-      ;;
-    --no-progress)
-      PROGRESS_ENABLED=0
-      shift
       ;;
     -h|--help)
       usage
       exit 0
       ;;
     *)
-      echo "未知參數：$1" >&2
       usage >&2
-      exit 1
+      fail "未知參數：$1"
       ;;
   esac
 done
 
-guided_progress_set_enabled "$PROGRESS_ENABLED"
-trap 'rm -f "$GUIDED_TIMING_FILE" "$EXTRA_RENDER_FILE"' EXIT
+[ -n "$OPENAPI_FILE" ] && [ -f "$OPENAPI_FILE" ] || fail "找不到 --openapi 指定的 spec：${OPENAPI_FILE:-（未指定）}"
+[ -n "$BUSINESS_FILE" ] && [ -f "$BUSINESS_FILE" ] || fail "找不到 --business-md 指定的首頁內容：${BUSINESS_FILE:-（未指定）}"
+[ -n "$OUTPUT_DIR" ] || fail "需要 --output-dir"
+[ -f "$MARKDOWN_RENDERER" ] || fail "找不到 Markdown renderer：$MARKDOWN_RENDERER"
 
-guided_progress_emit "generate_html" "validate_input" "in_progress" 0 3 "starting html generation"
-guided_timing_begin "html_total"
-
-if [ ! -f "$OPENAPI_FILE" ] && [ "$OPENAPI_FILE" = "docs/api-docs/openapi.yaml" ] && [ -f "docs/openapi.yaml" ]; then
-  OPENAPI_FILE="docs/openapi.yaml"
+if jq -e 'type == "object"' "$OPENAPI_FILE" >/dev/null 2>&1; then
+  OPENAPI_JSON="$(jq -c . "$OPENAPI_FILE")"
+else
+  OPENAPI_JSON="$(yq -o=json '.' "$OPENAPI_FILE" | jq -c .)" || fail "無法解析 spec：$OPENAPI_FILE"
 fi
 
-if [ ! -f "$OPENAPI_FILE" ]; then
-  echo "錯誤：找不到 $OPENAPI_FILE" >&2
-  echo "請先執行 gen-openapi.sh 產出 OpenAPI 文件" >&2
-  exit 1
-fi
-
-if [ "$WITH_EXTRA" = true ]; then
-  if [ ! -f "$MARKDOWN_RENDERER" ]; then
-    echo "錯誤：找不到 Markdown renderer：$MARKDOWN_RENDERER" >&2
-    exit 1
-  fi
-
-  if [ ! -f "$EXTRA_FILE" ]; then
-    echo "錯誤：找不到額外內容檔案 $EXTRA_FILE" >&2
-    exit 1
-  fi
-
-  EXTRA_RENDER_FILE="$(mktemp)"
-  cp "$EXTRA_FILE" "$EXTRA_RENDER_FILE"
-fi
-
-echo "正在產出互動式 HTML 文件..." >&2
-guided_progress_emit "generate_html" "validate_input" "in_progress" 1 3 "openapi ready"
-guided_timing_begin "render_html"
-OPENAPI_JSON="$(yq -o=json '.' "$OPENAPI_FILE" | jq -c .)"
 API_ENDPOINT_COUNT="$(printf '%s' "$OPENAPI_JSON" | jq '[.paths // {} | to_entries[] | .value | to_entries[] | select(.key | test("^(get|put|post|delete|options|head|patch|trace)$"))] | length')"
-EXTRA_HTML=""
-HOME_FILE="$(dirname "$OUTPUT_FILE")/index.html"
-if [ "$WITH_EXTRA" = true ]; then
-  EXTRA_HTML="$(php -n "$MARKDOWN_RENDERER" "$EXTRA_RENDER_FILE")"
-fi
+API_LIST_HTML="$(printf '%s' "$OPENAPI_JSON" | jq -r '
+  [.paths // {} | to_entries[] | .key as $path | .value | to_entries[]
+    | select(.key | test("^(get|put|post|delete|options|head|patch|trace)$"))
+    | "          <li><code>\(.key | ascii_upcase)</code> \($path | @html)"
+      + (if (.value.summary // "") != "" then " — \(.value.summary | @html)" else "" end)
+      + "</li>"]
+  | join("\n")')"
+PAGE_TITLE="$(awk '/^# /{sub(/^# +/, ""); print; exit}' "$BUSINESS_FILE")"
+[ -n "$PAGE_TITLE" ] || PAGE_TITLE="API 文件"
+PAGE_TITLE_HTML="$(printf '%s' "$PAGE_TITLE" | jq -Rr @html)"
+BUSINESS_HTML="$(php -n "$MARKDOWN_RENDERER" "$BUSINESS_FILE")"
 
-mkdir -p "$(dirname "$OUTPUT_FILE")"
+mkdir -p "$OUTPUT_DIR"
+API_DOCS_FILE="$OUTPUT_DIR/api-docs.html"
+HOME_FILE="$OUTPUT_DIR/index.html"
 TEMP_OUTPUT_FILE="$(mktemp)"
-trap 'rm -f "$GUIDED_TIMING_FILE" "$TEMP_OUTPUT_FILE" "$EXTRA_RENDER_FILE"' EXIT
+HOME_TEMP_OUTPUT_FILE="$(mktemp)"
+trap 'rm -f "$TEMP_OUTPUT_FILE" "$HOME_TEMP_OUTPUT_FILE"' EXIT
 
 echo "產出 Redoc 文件..." >&2
 
@@ -224,10 +177,10 @@ cat >> "$TEMP_OUTPUT_FILE" <<'REDOC_BODY'
     <header class="reference-head">
       <div>
         <h1>API Reference</h1>
-        <p>這頁只保留純 API 規格。若有同步摘要、錯誤碼整理或閱讀導覽，請改看首頁。</p>
+        <p>這頁只放本次的 API 規格；目的、需求與業務邏輯請看首頁。</p>
       </div>
       <div class="reference-actions">
-        <a href="./index.html">返回摘要首頁</a>
+        <a href="./index.html">返回首頁</a>
       </div>
     </header>
     <div id="redoc-root"></div>
@@ -277,10 +230,7 @@ cat >> "$TEMP_OUTPUT_FILE" <<'REDOC_TAIL'
 </html>
 REDOC_TAIL
 
-mv "$TEMP_OUTPUT_FILE" "$OUTPUT_FILE"
-
-HOME_TEMP_OUTPUT_FILE="$(mktemp)"
-trap 'rm -f "$GUIDED_TIMING_FILE" "$TEMP_OUTPUT_FILE" "$HOME_TEMP_OUTPUT_FILE" "$EXTRA_RENDER_FILE"' EXIT
+mv "$TEMP_OUTPUT_FILE" "$API_DOCS_FILE"
 
 cat > "$HOME_TEMP_OUTPUT_FILE" <<'HOME_HEAD'
 <!DOCTYPE html>
@@ -398,11 +348,6 @@ cat > "$HOME_TEMP_OUTPUT_FILE" <<'HOME_HEAD'
       background: #ffffff;
       color: #0f172a;
     }
-    .stat-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 12px;
-    }
     .stat-card {
       padding: 14px;
       border-radius: 18px;
@@ -420,6 +365,19 @@ cat > "$HOME_TEMP_OUTPUT_FILE" <<'HOME_HEAD'
       color: var(--muted);
       font-size: 12px;
       line-height: 1.5;
+    }
+    .api-list {
+      margin: 0;
+      padding-left: 18px;
+      color: #475569;
+      font-size: 13px;
+      line-height: 1.7;
+      overflow-wrap: anywhere;
+    }
+    .api-list code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-weight: 700;
+      color: #115e59;
     }
     .content-shell {
       display: grid;
@@ -560,65 +518,45 @@ cat > "$HOME_TEMP_OUTPUT_FILE" <<'HOME_HEAD'
       .hero-main h1 {
         font-size: 34px;
       }
-      .stat-grid {
-        grid-template-columns: 1fr;
-      }
     }
   </style>
 </head>
 <body>
+HOME_HEAD
+
+cat >> "$HOME_TEMP_OUTPUT_FILE" <<HOME_HERO
   <div class="page-shell">
     <section class="hero">
       <article class="hero-main">
-        <span class="eyebrow">Sync Summary</span>
-        <h1>API 文件首頁</h1>
-        <p>這頁專門承接同步摘要、錯誤碼整理、變更說明與對接提醒。API 規格本體拆到另一頁，避免 Redoc 參考文件與補充說明混在同一條閱讀流。</p>
+        <span class="eyebrow">Business Logic</span>
+        <h1>${PAGE_TITLE_HTML}</h1>
+        <p>這頁說明本次開發的目的、需求、業務邏輯，以及前端要配合的調整。各 API 的 request／response 規格請看 API Reference。</p>
         <div class="hero-actions">
           <a class="primary" href="./api-docs.html">進入 API Reference</a>
-          <a class="secondary" href="#summary-content">查看本次摘要</a>
+          <a class="secondary" href="#summary-content">查看業務邏輯</a>
         </div>
       </article>
       <aside class="hero-side">
-        <div class="stat-grid">
-HOME_HEAD
-
-cat >> "$HOME_TEMP_OUTPUT_FILE" <<HOME_STATS
-          <div class="stat-card">
-            <strong>${API_ENDPOINT_COUNT}</strong>
-            <span>API 端點數量</span>
-          </div>
-HOME_STATS
-
-cat >> "$HOME_TEMP_OUTPUT_FILE" <<'HOME_MID'
-          <div class="stat-card">
-            <strong>2</strong>
-            <span>文件頁：首頁 + API Reference</span>
-          </div>
+        <div class="stat-card">
+          <strong>${API_ENDPOINT_COUNT}</strong>
+          <span>本次 API 數量</span>
         </div>
+        <ul class="api-list">
+${API_LIST_HTML}
+        </ul>
       </aside>
     </section>
 
     <section class="content-shell">
       <main class="content-main" id="summary-content">
-HOME_MID
-if [ "$WITH_EXTRA" = true ]; then
-  printf '%s\n' "$EXTRA_HTML" >> "$HOME_TEMP_OUTPUT_FILE"
-else
-  cat >> "$HOME_TEMP_OUTPUT_FILE" <<'HOME_EMPTY'
-        <h2>本次摘要</h2>
-        <p>這次沒有額外補充內容。首頁保留成為固定入口頁，讓分享時始終有一致的 landing page；若要補充同步摘要、錯誤碼整理、認證方式或對接提醒，可在下一次生成前提供補充內容。</p>
-        <ul>
-          <li>這裡適合放：同步摘要、錯誤碼整理、Base URL、認證方式、對接提醒。</li>
-          <li>完整 request / response / schema / security 規格，請進入 API Reference。</li>
-        </ul>
-HOME_EMPTY
-fi
+HOME_HERO
+printf '%s\n' "$BUSINESS_HTML" >> "$HOME_TEMP_OUTPUT_FILE"
 cat >> "$HOME_TEMP_OUTPUT_FILE" <<'HOME_TAIL'
       </main>
       <aside class="content-nav">
         <h2>快速導覽</h2>
-        <a href="#summary-content">回到摘要起點</a>
-        <a href="./api-docs.html">查看完整 API 規格</a>
+        <a href="#summary-content">回到業務邏輯起點</a>
+        <a href="./api-docs.html">查看 API 規格</a>
       </aside>
     </section>
   </div>
@@ -628,56 +566,11 @@ HOME_TAIL
 
 mv "$HOME_TEMP_OUTPUT_FILE" "$HOME_FILE"
 
-if [ "$OUTPUT_FILE" = "$DEFAULT_OUTPUT_FILE" ]; then
-  VERSION_DIR="$(create_version_dir)"
-  cp "$OPENAPI_FILE" "$VERSION_DIR/openapi.yaml"
-  cp "$HOME_FILE" "$VERSION_DIR/redoc/index.html"
-  cp "$OUTPUT_FILE" "$VERSION_DIR/redoc/api-docs.html"
-  if [ "$WITH_EXTRA" = true ]; then
-    VERSION_EXTRA_FILE="$VERSION_DIR/redoc/extra.md"
-    cp "$EXTRA_RENDER_FILE" "$VERSION_EXTRA_FILE"
-  fi
-fi
-
-guided_timing_end "gen-html" "render_html" "output=$OUTPUT_FILE"
-guided_progress_emit "generate_html" "render_html" "in_progress" 2 3 "html rendered"
-guided_timing_end "gen-html" "html_total" "output=$OUTPUT_FILE"
-TIMINGS_JSON="$(guided_timing_json)"
-guided_progress_emit "generate_html" "complete" "done" 3 3 "html generation complete"
-echo "HTML 文件已產出：$OUTPUT_FILE" >&2
-echo "首頁文件已產出：$HOME_FILE" >&2
-echo "  - 使用 Redoc v2.1.3（固定版本，確保穩定）" >&2
-echo "  - 支援 Markdown 擴充（可在 description 加入流程圖、圖片）" >&2
-if [ "$WITH_EXTRA" = true ]; then
-  echo "  - 已載入額外內容：$EXTRA_FILE" >&2
-else
-  echo "  - 未提供額外內容，首頁以固定導覽版型輸出" >&2
-fi
-if [ -n "$VERSION_DIR" ]; then
-  echo "  - 已建立版本備份：$VERSION_DIR" >&2
-  if [ -n "$VERSION_EXTRA_FILE" ]; then
-    echo "  - 已建立額外內容版本備份：$VERSION_EXTRA_FILE" >&2
-  fi
-else
-  echo "  - 自訂輸出路徑不建立正式版本備份" >&2
-fi
-echo "  - 可直接用瀏覽器開啟，無需啟動伺服器" >&2
+echo "首頁：$HOME_FILE" >&2
+echo "API 規格：$API_DOCS_FILE" >&2
 
 jq -n \
-  --arg file "$OUTPUT_FILE" \
   --arg home_file "$HOME_FILE" \
-  --arg extra_file "$EXTRA_FILE" \
-  --arg version_dir "$VERSION_DIR" \
-  --arg version_extra_file "$VERSION_EXTRA_FILE" \
-  --argjson with_extra "$(if [ "$WITH_EXTRA" = true ]; then echo true; else echo false; fi)" \
-  --argjson timings "$TIMINGS_JSON" \
-  '{
-    file: $file,
-    home_file: $home_file,
-    extra_file: (if $with_extra then $extra_file else null end),
-    version_dir: (if $version_dir == "" then null else $version_dir end),
-    version_extra_file: (if $version_extra_file == "" then null else $version_extra_file end),
-    with_extra: $with_extra,
-    timings: $timings,
-    message: "已產出摘要首頁與 Redoc API 文件"
-  }'
+  --arg api_docs_file "$API_DOCS_FILE" \
+  --argjson endpoint_count "$API_ENDPOINT_COUNT" \
+  '{home_file: $home_file, api_docs_file: $api_docs_file, endpoint_count: $endpoint_count}'
